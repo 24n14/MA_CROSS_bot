@@ -1,11 +1,9 @@
 """
-Модуль конфигурации индикатора.
-
+Модуль глобальной конфигурации индикаторов и параметров риск-менеджмента.
 Содержит классы:
 - Config: параметры технического индикатора
-- AnalysisConfig: настройка режимов работы
+- AnalysisConfig: настройка режимов работы и управление рисками
 """
-
 from dataclasses import dataclass
 
 
@@ -13,20 +11,10 @@ from dataclasses import dataclass
 class Config:
     """
     Конфигурация технического индикатора.
-
-    Attributes:
-        ma_period: период простой скользящей средней
-        ema_period: период экспоненциальной скользящей средней
-        trend_lookback: количество свечей для анализа тренда
-        angle_threshold_strong: угол для сильного тренда (градусы)
-        angle_threshold_weak: угол для слабого тренда (градусы)
-        divergence_threshold: порог расхождения MA/EMA (%)
-        use_linear_regression: использовать линейную регрессию
-        smooth_angle: сглаживать угол
     """
-    ma_period: int = 5
-    ema_period: int = 20
-    trend_lookback: int = 50
+    ma_period: int = 20
+    ema_period: int = 50
+    trend_lookback: int = 20
     angle_threshold_strong: float = 30.0
     angle_threshold_weak: float = 10.0
     divergence_threshold: float = 0.1
@@ -36,37 +24,50 @@ class Config:
     @classmethod
     def for_timeframe(cls, timeframe: str) -> 'Config':
         """
-        Создать конфигурацию под конкретный таймфрейм.
-
-        Args:
-            timeframe: таймфрейм ('1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w')
-
-        Returns:
-            Config с оптимальными параметрами
+        Создать конфигурацию под конкретный таймфрейм с исправленными математическими периодами.
         """
+        # Младшие таймфреймы (скальпинг/интрадей шумы)
         if timeframe in ['1m', '5m', '15m']:
             return cls(
-                ma_period=10, ema_period=10, trend_lookback=5,
-                angle_threshold_strong=45.0, angle_threshold_weak=20.0,
+                ma_period=9,  # Короткая быстрая скользящая
+                ema_period=21,  # Экспоненциальная средняя для фильтрации шума
+                trend_lookback=14,  # Увеличен lookback для защиты от резких шпилек
+                angle_threshold_strong=25.0,  # Оптимизированные углы под ATR-регрессию
+                angle_threshold_weak=12.0,
                 divergence_threshold=0.1
             )
+
+        # Средние таймфреймы
         elif timeframe in ['30m', '1h']:
             return cls(
-                ma_period=20, ema_period=20, trend_lookback=10,
-                angle_threshold_strong=30.0, angle_threshold_weak=15.0,
+                ma_period=20,
+                ema_period=50,
+                trend_lookback=14,
+                angle_threshold_strong=20.0,
+                angle_threshold_weak=10.0,
                 divergence_threshold=0.15
             )
+
+        # Трендовый таймфрейм (основной рабочий)
         elif timeframe in ['4h']:
             return cls(
-                ma_period=50, ema_period=50, trend_lookback=20,
-                angle_threshold_strong=15.0, angle_threshold_weak=5.0,
-                divergence_threshold=0.3
+                ma_period=50,
+                ema_period=100,
+                trend_lookback=20,
+                angle_threshold_strong=15.0,
+                angle_threshold_weak=5.0,
+                divergence_threshold=0.25
             )
+
+        # Глобальные стратегические таймфреймы
         elif timeframe in ['1d', '1w']:
             return cls(
-                ma_period=200, ema_period=50, trend_lookback=30,
-                angle_threshold_strong=10.0, angle_threshold_weak=3.0,
-                divergence_threshold=0.5
+                ma_period=50,
+                ema_period=200,
+                trend_lookback=30,
+                angle_threshold_strong=10.0,
+                angle_threshold_weak=3.0,
+                divergence_threshold=0.35
             )
         else:
             return cls()
@@ -75,30 +76,19 @@ class Config:
 @dataclass
 class AnalysisConfig:
     """
-    Конфигурация режимов анализа.
-
-    Attributes:
-        enable_mtf: включить мультитаймфреймовый анализ
-        enable_single: включить анализ одного таймфрейма
-        enable_compare: включить сравнение MTF и Single
-        symbol: торговая пара
-        exchange: биржа для загрузки данных
-        limit: количество загружаемых свечей
-        mtf_timeframes: таймфреймы для MTF анализа
-        single_timeframe: таймфрейм для одиночного режима
-        save_csv: сохранять результаты в CSV
-        verbose: подробный вывод в консоль
+    Конфигурация режимов анализа и централизованного риск-менеджмента.
     """
     enable_mtf: bool = True
     enable_single: bool = False
     enable_compare: bool = False
-
     symbol: str = 'BTC/USDT'
     exchange: str = 'binance'
     limit: int = 500
-
     mtf_timeframes: tuple = ('1h', '4h', '1d')
     single_timeframe: str = '4h'
-
     save_csv: bool = True
     verbose: bool = True
+
+    # --- ИНТЕГРАЦИЯ ДИНАМИЧЕСКОГО РИСК-МЕНЕДЖМЕНТА ---
+    atr_multiplier: float = 2.0  # Множитель волатильности для динамического Stop Loss
+    risk_reward_ratio: float = 2.0  # Математическое соотношение Risk/Reward (1:2) для Take Profit

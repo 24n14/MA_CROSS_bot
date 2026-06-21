@@ -1,14 +1,9 @@
 """
-Модуль мультитаймфреймового анализа.
-
-Содержит класс:
-- MultiTimeframeAnalyzer: агрегация сигналов с разных таймфреймов
+Оптимизированный модуль мультитаймфреймового анализа с взвешенным консенсусом
+и защитой от рассинхронизации трендов.
 """
-
-# import pandas as pd
 from typing import Dict, List
 from datetime import datetime
-
 from config import Config
 from exchange import ExchangeDataLoader
 from indicator import AdvancedTrendSignalIndicator
@@ -17,27 +12,14 @@ from indicator import AdvancedTrendSignalIndicator
 class MultiTimeframeAnalyzer:
     """
     Мультитаймфреймовый анализатор.
-
-    Анализирует сигналы на разных таймфреймах и агрегирует их
-    с учетом весов для получения финального сигнала.
-
-    Старшие таймфреймы имеют больший вес при агрегации.
-
-    Examples:
-        >>> mtf = MultiTimeframeAnalyzer(
-        ...     timeframes=['1h', '4h', '1d'],
-        ...     exchange_name='binance',
-        ...     symbol='BTC/USDT'
-        ... )
-        >>> analysis = mtf.load_and_analyze(limit=500)
-        >>> mtf.print_analysis(analysis)
+    Математически агрегирует сигналы с учетом весов и жестко блокирует торговлю
+    в моменты рассинхронизации старших и младших периодов.
     """
-
-    # Веса таймфреймов для агрегации сигналов
+    # Математические веса таймфреймов (младшие не могут перевесить старшую структуру)
     TF_WEIGHTS = {
-        '1m': 0.1, '5m': 0.15, '15m': 0.2,
-        '30m': 0.25, '1h': 0.35, '4h': 0.5,
-        '1d': 0.7, '1w': 0.9
+        '1m': 0.05, '5m': 0.10, '15m': 0.15,
+        '30m': 0.20, '1h': 0.35, '4h': 0.60,
+        '1d': 0.85, '1w': 1.00
     }
 
     def __init__(self,
@@ -46,16 +28,10 @@ class MultiTimeframeAnalyzer:
                  symbol: str = 'BTC/USDT'):
         """
         Инициализация MTF анализатора.
-
-        Args:
-            timeframes: список таймфреймов (по умолчанию ['1h', '4h', '1d'])
-            exchange_name: название биржи
-            symbol: торговая пара
         """
         self.timeframes = timeframes or ['1h', '4h', '1d']
         self.symbol = symbol
         self.loader = ExchangeDataLoader(exchange_name)
-
         self.indicators = {
             tf: AdvancedTrendSignalIndicator(Config.for_timeframe(tf))
             for tf in self.timeframes
@@ -63,22 +39,10 @@ class MultiTimeframeAnalyzer:
 
     def load_and_analyze(self, limit: int = 500) -> Dict:
         """
-        Загружает данные и проводит MTF анализ.
-
-        Процесс:
-        1. Загружает данные для всех таймфреймов
-        2. Для каждого ТФ создает индикатор с оптимальной конфигурацией
-        3. Генерирует сигналы
-        4. Агрегирует результаты
-
-        Args:
-            limit: количество свечей для каждого таймфрейма
-
-        Returns:
-            Словарь с результатами анализа
+        Загружает данные и проводит скоринговый MTF анализ.
         """
         print(f"\n{'=' * 60}")
-        print(f"📊 МУЛЬТИТАЙМФРЕЙМОВЫЙ АНАЛИЗ: {self.symbol}")
+        print(f" 📊 МУЛЬТИТАЙМФРЕЙМОВЫЙ АНАЛИЗ (КОНСЕНСУС): {self.symbol}")
         print(f"{'=' * 60}")
 
         data = self.loader.load_multiple_timeframes(
@@ -86,9 +50,8 @@ class MultiTimeframeAnalyzer:
             timeframes=self.timeframes,
             limit=limit
         )
-
         if not data:
-            print("❌ Не удалось загрузить данные")
+            print(" ❌ Не удалось загрузить данные с биржи")
             return None
 
         results = {}
@@ -96,7 +59,7 @@ class MultiTimeframeAnalyzer:
 
         for tf in self.timeframes:
             if tf not in data:
-                print(f"⚠️ Нет данных для {tf}")
+                print(f" ⚠️ Нет данных для таймфрейма {tf}")
                 continue
 
             indicator = self.indicators[tf]
@@ -117,6 +80,7 @@ class MultiTimeframeAnalyzer:
                 'weight': weight
             })
 
+        # Вычисление финального математического консенсуса
         final_signal = self._calculate_final_signal(mtf_summary)
 
         return {
@@ -130,81 +94,87 @@ class MultiTimeframeAnalyzer:
 
     def _calculate_final_signal(self, summary: List[Dict]) -> Dict:
         """
-        Расчет финального сигнала на основе всех таймфреймов.
-
-        Агрегация:
-        - Взвешенная сила = Σ(сила × вес) / Σ(весов)
-        - Согласованность = большинство / всего
-        - Противоречие старшему ТФ → понижение уверенности
-
-        Args:
-            summary: список с сигналами по таймфреймам
-
-        Returns:
-            Словарь с финальным сигналом
+        МАТЕМАТИЧЕСКИЙ СКОРИНГ КОНСЕНСУСА.
+        Исключает ложные входы по простому арифметическому большинству мелких ТФ.
         """
         if not summary:
-            return {'direction': 'N/A', 'confidence': 'N/A', 'strength': 0}
+            return {'direction': 'NEUTRAL', 'confidence': 'LOW', 'strength': 0, 'trigger_trade': False}
 
         total_weight = sum(item['weight'] for item in summary)
-        weighted_strength = sum(
-            item['strength'] * item['weight'] for item in summary
-        ) / total_weight if total_weight > 0 else 0
 
-        bullish_count = sum(1 for s in summary if 'BULLISH' in str(s['signal']).upper())
-        bearish_count = sum(1 for s in summary if 'BEARISH' in str(s['signal']).upper())
-        total = len(summary)
+        # Считаем взвешенные голоса за каждое направление
+        bullish_score = 0.0
+        bearish_score = 0.0
+        flat_score = 0.0
+        weighted_strength_sum = 0.0
 
-        if bullish_count > bearish_count:
+        for item in summary:
+            sig = str(item['signal']).upper()
+            w = item['weight']
+            weighted_strength_sum += item['strength'] * w
+
+            if 'STRONG BULLISH' in sig or 'BULLISH' in sig:
+                bullish_score += w
+            elif 'STRONG BEARISH' in sig or 'BEARISH' in sig:
+                bearish_score += w
+            else:
+                flat_score += w
+
+        # Финальная средневзвешенная сила сигнала
+        final_strength = weighted_strength_sum / total_weight if total_weight > 0 else 0.0
+
+        # Выделяем доминирующее взвешенное направление
+        if bullish_score > bearish_score and bullish_score > flat_score:
             direction = 'BULLISH'
-            agreement = bullish_count / total
-        elif bearish_count > bullish_count:
+            agreement_pct = (bullish_score / total_weight) * 100
+        elif bearish_score > bullish_score and bearish_score > flat_score:
             direction = 'BEARISH'
-            agreement = bearish_count / total
+            agreement_pct = (bearish_score / total_weight) * 100
         else:
             direction = 'NEUTRAL'
-            agreement = 0.5
+            agreement_pct = (flat_score / total_weight) * 100
 
-        if agreement >= 0.8:
+        # Находим самый старший (тяжелый) таймфрейм в пуле для фильтра структуры
+        senior_tf = max(summary, key=lambda x: x['weight'])
+        senior_sig = str(senior_tf['signal']).upper()
+
+        # --- ЖЕСТКАЯ ЗАЩИТА ОТ РАССИНХРОНИЗАЦИИ ---
+        # Если итоговый вектор мелких ТФ идет против старшего тренда, блокируем вход
+        if direction == 'BULLISH' and ('BEARISH' in senior_sig or 'SIDEWAYS' in senior_sig):
+            direction = 'NEUTRAL'
+            agreement_pct = 50.0
+        elif direction == 'BEARISH' and ('BULLISH' in senior_sig or 'SIDEWAYS' in senior_sig):
+            direction = 'NEUTRAL'
+            agreement_pct = 50.0
+
+        # Градация уверенности на основе % взвешенного согласия
+        if agreement_pct >= 75.0:
             confidence = 'VERY HIGH'
-        elif agreement >= 0.67:
+        elif agreement_pct >= 60.0:
             confidence = 'HIGH'
-        elif agreement >= 0.5:
+        elif agreement_pct >= 45.0:
             confidence = 'MODERATE'
         else:
             confidence = 'LOW'
 
-        if len(summary) >= 2:
-            senior_tf = max(summary, key=lambda x: self.TF_WEIGHTS.get(x['timeframe'], 0))
-            junior_tf = min(summary, key=lambda x: self.TF_WEIGHTS.get(x['timeframe'], 0))
-
-            if 'BULLISH' in str(senior_tf['signal']) and 'BEARISH' in str(junior_tf['signal']):
-                if confidence == 'VERY HIGH':
-                    confidence = 'HIGH'
-                elif confidence == 'HIGH':
-                    confidence = 'MODERATE'
-            elif 'BEARISH' in str(senior_tf['signal']) and 'BULLISH' in str(junior_tf['signal']):
-                if confidence == 'VERY HIGH':
-                    confidence = 'HIGH'
-                elif confidence == 'HIGH':
-                    confidence = 'MODERATE'
+        # Разрешение на открытие рыночного ордера (Сигнал должен быть четким и сильным)
+        trigger_trade = False
+        if direction != 'NEUTRAL' and confidence in ['HIGH', 'VERY HIGH']:
+            if abs(final_strength) >= 40.0:  # Защита от вялых движений
+                trigger_trade = True
 
         return {
             'direction': direction,
             'confidence': confidence,
-            'strength': round(weighted_strength, 1),
-            'agreement': round(agreement * 100, 1),
-            'buy_signals': bullish_count,
-            'sell_signals': bearish_count,
-            'total_timeframes': total
+            'strength': round(final_strength, 1),
+            'agreement': round(agreement_pct, 1),
+            'trigger_trade': trigger_trade,
+            'total_timeframes': len(summary)
         }
 
     def print_analysis(self, analysis: Dict):
         """
-        Вывод результатов MTF анализа в консоль.
-
-        Args:
-            analysis: результат load_and_analyze()
+        Красивый и информативный вывод скоринга в консоль.
         """
         if not analysis:
             return
@@ -212,48 +182,23 @@ class MultiTimeframeAnalyzer:
         final = analysis['final_signal']
         details = analysis['mtf_details']
 
-        print(f"\n{'=' * 60}")
-        print(f"📊 MTF АНАЛИЗ: {self.symbol}")
-        print(f"🕐 {analysis['timestamp'].strftime('%Y-%m-%d %H:%M')}")
-        print(f"{'=' * 60}")
-
-        print(f"\n{'ТФ':<6} {'Цена':>10} {'Сигнал':<30} {'Сила':>6} {'Тренд':<18} {'Угол':>8}")
-        print("-" * 85)
-
+        print(f"\n{'ТФ':<6} {'Цена':>10} {'Внутренний Сигнал':<25} {'Сила':>6} {'Глобальный Тренд':<18} {'Вес':>5}")
+        print("-" * 75)
         for item in details:
-            tf = item['timeframe']
-            price = f"${item['close']:.2f}"
-            signal = item['signal'][:28]
-            strength = f"{item['strength']:.1f}"
-            trend = item['trend'][:16]
-            angle = f"{item['angle']:.2f}°"
-
-            print(f"{tf:<6} {price:>10} {signal:<30} {strength:>6} {trend:<18} {angle:>8}")
+            print(
+                f"{item['timeframe']:<6} ${item['close']:>9.2f} {item['signal']:<25} {item['strength']:>6.1f} {item['trend']:<18} {item['weight']:>5.2f}")
 
         print(f"\n{'=' * 60}")
-        print(f"🎯 ИТОГОВЫЙ СИГНАЛ")
+        print(f" 🎯 МАТЕМАТИЧЕСКИЙ СИНТЕЗ СИСТЕМЫ")
         print(f"{'=' * 60}")
 
-        if final['direction'] == 'BULLISH':
-            emoji = '🟢'
-        elif final['direction'] == 'BEARISH':
-            emoji = '🔴'
-        else:
-            emoji = '⚪'
+        emoji = '🟢' if final['direction'] == 'BULLISH' else ('🔴' if final['direction'] == 'BEARISH' else '⚪')
+        print(f"Направление:      {emoji} {final['direction']}")
+        print(f"Уверенность (Согласие): {final['confidence']} ({final['agreement']}%)")
+        print(f"Взвешенная Сила:  {final['strength']} / 100")
 
-        print(f"Направление:  {emoji} {final['direction']}")
-        print(f"Уверенность:  {final['confidence']}")
-        print(f"Сила сигнала: {final['strength']:.1f}")
-        print(f"Согласие ТФ:  {final['agreement']}%")
-        print(f"Buy/Sell:     {final['buy_signals']}/{final['sell_signals']}")
-
-        print(f"\n💡 РЕКОМЕНДАЦИЯ:")
-        if final['confidence'] in ['VERY HIGH', 'HIGH'] and final['direction'] != 'NEUTRAL':
-            if final['direction'] == 'BULLISH':
-                print("   ✅ Можно рассматривать LONG позиции")
-            else:
-                print("   ✅ Можно рассматривать SHORT позиции")
-        elif final['confidence'] == 'MODERATE':
-            print("   ⚠️ Ждать подтверждения, открывать осторожно")
+        print(f"\n 💡 ПРИКАЗ ДЛЯ ИСПОЛНИТЕЛЬНОГО МОДУЛЯ:")
+        if final['trigger_trade']:
+            print(f" 🔥 [ВХОД РАЗРЕШЕН] Открывать позицию {final['direction']} с полным АТР риск-профилем.")
         else:
-            print("   ❌ Лучше воздержаться от торговли")
+            print(" 🛑 [ТОРГОВЛЯ ЗАБЛОКИРОВАНА] Нет рыночного консенсуса или обнаружен флэт. Ожидание.")
