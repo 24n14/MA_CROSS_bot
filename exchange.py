@@ -10,6 +10,7 @@ import ccxt
 import time
 from typing import Dict, Optional
 from datetime import datetime
+from log import logger
 
 
 class ExchangeDataLoader:
@@ -60,7 +61,7 @@ class ExchangeDataLoader:
             if since:
                 since_ts = int(datetime.strptime(since, '%Y-%m-%d').timestamp() * 1000)
 
-            print(f"Загрузка данных {symbol} ({timeframe}) с {self.exchange.name}...")
+            logger.info(f"Загрузка данных {symbol} ({timeframe}) с {self.exchange.name}...")
             ohlcv = self.exchange.fetch_ohlcv(
                 symbol, timeframe=timeframe, limit=limit, since=since_ts
             )
@@ -73,13 +74,13 @@ class ExchangeDataLoader:
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)
 
-            print(f"Загружено {len(df)} свечей")
-            print(f"Период: с {df.index[0]} по {df.index[-1]}")
+            logger.info(f"Загружено {len(df)} свечей")
+            logger.info(f"Период: с {df.index[0]} по {df.index[-1]}")
 
             return df
 
         except Exception as e:
-            print(f"Ошибка при загрузке данных: {e}")
+            logger.info(f"Ошибка при загрузке данных: {e}")
             return None
 
     def load_multiple_timeframes(self,

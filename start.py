@@ -6,6 +6,7 @@
 """
 
 import traceback
+from log import logger
 from config import AnalysisConfig
 from run import (
     run_single_analysis,
@@ -50,13 +51,13 @@ def main():
         verbose=True
     )
 
-    print(f"\n{'🔷' * 30}")
-    print(f"ЗАПУСК АНАЛИЗА: {analysis_config.symbol}")
-    print(f"{'🔷' * 30}")
-    print(f"\nАктивные режимы:")
-    print(f"  MTF:     {'✅ ВКЛ' if analysis_config.enable_mtf else '❌ ВЫКЛ'}")
-    print(f"  Single:  {'✅ ВКЛ' if analysis_config.enable_single else '❌ ВЫКЛ'}")
-    print(f"  Compare: {'✅ ВКЛ' if analysis_config.enable_compare else '❌ ВЫКЛ'}")
+    logger.info(f"\n{'🔷' * 30}")
+    logger.info(f"ЗАПУСК АНАЛИЗА: {analysis_config.symbol}")
+    logger.info(f"{'🔷' * 30}")
+    logger.info(f"\nАктивные режимы:")
+    logger.info(f"  MTF:     {'✅ ВКЛ' if analysis_config.enable_mtf else '❌ ВЫКЛ'}")
+    logger.info(f"  Single:  {'✅ ВКЛ' if analysis_config.enable_single else '❌ ВЫКЛ'}")
+    logger.info(f"  Compare: {'✅ ВКЛ' if analysis_config.enable_compare else '❌ ВЫКЛ'}")
 
     mtf_data = None
     single_data = None
@@ -77,16 +78,16 @@ def main():
     if analysis_config.enable_compare and mtf_data and single_data:
         print_comparison(mtf_data, single_data, analysis_config)
 
-    print(f"\n{'=' * 60}")
-    print(f"✅ Анализ завершен успешно")
-    print(f"{'=' * 60}")
+    logger.info(f"\n{'=' * 60}")
+    logger.info(f"✅ Анализ завершен успешно")
+    logger.info(f"{'=' * 60}")
 
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n⚠️ Выполнение прервано пользователем")
+        logger.info("\n⚠️ Выполнение прервано пользователем")
     except Exception as e:
-        print(f"\n❌ Ошибка: {e}")
+        logger.info(f"\n❌ Ошибка: {e}")
         traceback.print_exc()

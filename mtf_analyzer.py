@@ -7,6 +7,7 @@ from datetime import datetime
 from config import Config
 from exchange import ExchangeDataLoader
 from indicator import AdvancedTrendSignalIndicator
+from log import logger
 
 
 class MultiTimeframeAnalyzer:
@@ -41,9 +42,9 @@ class MultiTimeframeAnalyzer:
         """
         Загружает данные и проводит скоринговый MTF анализ.
         """
-        print(f"\n{'=' * 60}")
-        print(f" 📊 МУЛЬТИТАЙМФРЕЙМОВЫЙ АНАЛИЗ (КОНСЕНСУС): {self.symbol}")
-        print(f"{'=' * 60}")
+        logger.info(f"\n{'=' * 60}")
+        logger.info(f" 📊 МУЛЬТИТАЙМФРЕЙМОВЫЙ АНАЛИЗ (КОНСЕНСУС): {self.symbol}")
+        logger.info(f"{'=' * 60}")
 
         data = self.loader.load_multiple_timeframes(
             self.symbol,
@@ -51,7 +52,7 @@ class MultiTimeframeAnalyzer:
             limit=limit
         )
         if not data:
-            print(" ❌ Не удалось загрузить данные с биржи")
+            logger.info(" ❌ Не удалось загрузить данные с биржи")
             return None
 
         results = {}
@@ -59,7 +60,7 @@ class MultiTimeframeAnalyzer:
 
         for tf in self.timeframes:
             if tf not in data:
-                print(f" ⚠️ Нет данных для таймфрейма {tf}")
+                logger.info(f" ⚠️ Нет данных для таймфрейма {tf}")
                 continue
 
             indicator = self.indicators[tf]
@@ -182,23 +183,22 @@ class MultiTimeframeAnalyzer:
         final = analysis['final_signal']
         details = analysis['mtf_details']
 
-        print(f"\n{'ТФ':<6} {'Цена':>10} {'Внутренний Сигнал':<25} {'Сила':>6} {'Глобальный Тренд':<18} {'Вес':>5}")
-        print("-" * 75)
+        logger.info(f"\n{'ТФ':<6} {'Цена':>10} {'Внутренний Сигнал':<25} {'Сила':>6} {'Глобальный Тренд':<18} {'Вес':>5}")
+        logger.info("-" * 75)
         for item in details:
-            print(
+            logger.info(
                 f"{item['timeframe']:<6} ${item['close']:>9.2f} {item['signal']:<25} {item['strength']:>6.1f} {item['trend']:<18} {item['weight']:>5.2f}")
 
-        print(f"\n{'=' * 60}")
-        print(f" 🎯 МАТЕМАТИЧЕСКИЙ СИНТЕЗ СИСТЕМЫ")
-        print(f"{'=' * 60}")
+        logger.info(f"\n{'=' * 60}")
+        logger.info(f" 🎯 МАТЕМАТИЧЕСКИЙ СИНТЕЗ СИСТЕМЫ")
+        logger.info(f"{'=' * 60}")
 
         emoji = '🟢' if final['direction'] == 'BULLISH' else ('🔴' if final['direction'] == 'BEARISH' else '⚪')
-        print(f"Направление:      {emoji} {final['direction']}")
-        print(f"Уверенность (Согласие): {final['confidence']} ({final['agreement']}%)")
-        print(f"Взвешенная Сила:  {final['strength']} / 100")
-
-        print(f"\n 💡 ПРИКАЗ ДЛЯ ИСПОЛНИТЕЛЬНОГО МОДУЛЯ:")
+        logger.info(f"Направление: {emoji} {final['direction']}")
+        logger.info(f"Уверенность (Согласие): {final['confidence']} ({final['agreement']}%)")
+        logger.info(f"Взвешенная Сила:  {final['strength']} / 100")
+        logger.info(f"\n 💡 ПРИКАЗ ДЛЯ ИСПОЛНИТЕЛЬНОГО МОДУЛЯ:")
         if final['trigger_trade']:
-            print(f" 🔥 [ВХОД РАЗРЕШЕН] Открывать позицию {final['direction']} с полным АТР риск-профилем.")
+            logger.info(f" 🔥 [ВХОД РАЗРЕШЕН] Открывать позицию {final['direction']} с полным АТР риск-профилем.")
         else:
-            print(" 🛑 [ТОРГОВЛЯ ЗАБЛОКИРОВАНА] Нет рыночного консенсуса или обнаружен флэт. Ожидание.")
+            logger.info(" 🛑 [ТОРГОВЛЯ ЗАБЛОКИРОВАНА] Нет рыночного консенсуса или обнаружен флэт. Ожидание.")

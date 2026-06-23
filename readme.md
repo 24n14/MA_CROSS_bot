@@ -768,3 +768,19 @@ from run import run_single_analysis, run_mtf_analysis
 # Использование
 config = AnalysisConfig(enable_single=True, symbol='ETH/USDT')
 result = run_single_analysis(config)
+
+MA-CROSS-bot/
+├── logs/                  # Логи работы программы
+│   └── bot_history.log    # Что происходило, ошибки, отладка
+├── csv_history/           # Результаты анализа
+│   ├── BTC_USDT_4h_signals.csv
+│   ├── MTF_BTC_USDT_1h_signals.csv
+│   ├── MTF_BTC_USDT_4h_signals.csv
+│   └── MTF_BTC_USDT_1d_signals.csv
+├── log.py
+├── config.py
+├── exchange.py
+├── indicator.py
+├── mtf_analyzer.py
+├── run.py
+└── start.py
