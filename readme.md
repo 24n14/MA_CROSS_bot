@@ -282,8 +282,8 @@ indicator = AdvancedTrendSignalIndicator(config)
 result = indicator.generate_signal(df)
 
 # Последний сигнал
-print(result['Signal'].iloc[-1])
-print(f"Сила: {result['Signal_Strength'].iloc[-1]}")
+logger.info(result['Signal'].iloc[-1])
+logger.info(f"Сила: {result['Signal_Strength'].iloc[-1]}")
 
 _get_enhanced_signal(c, o, ma, ema, is_bullish, is_bearish, trend_info, divergence, ma_angle, ema_angle) -> str
 
@@ -610,10 +610,10 @@ single_data = run_single_analysis(config)
 # Проверка
 final = mtf_data['analysis']['final_signal']
 if final['confidence'] in ['VERY HIGH', 'HIGH'] and final['direction'] != 'NEUTRAL':
-    print(f"✅ Сигнал подтвержден: {final['direction']}")
-    print(f"Сила: {final['strength']}, Согласие ТФ: {final['agreement']}%")
+    logger.info(f"✅ Сигнал подтвержден: {final['direction']}")
+    logger.info(f"Сила: {final['strength']}, Согласие ТФ: {final['agreement']}%")
 else:
-    print("❌ Сигнал недостаточно сильный, пропускаем")
+    logger.info("❌ Сигнал недостаточно сильный, пропускаем")
 
 Пример 2: Сканирование нескольких пар
 symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'ADA/USDT']
@@ -631,7 +631,7 @@ for symbol in symbols:
     if single_data:
         last_signal = single_data['result']['Signal'].iloc[-1]
         strength = single_data['result']['Signal_Strength'].iloc[-1]
-        print(f"{symbol}: {last_signal} (Сила: {strength:.1f})")
+        logger.info(f"{symbol}: {last_signal} (Сила: {strength:.1f})")
     
     time.sleep(2)  # Задержка между запросами
 
@@ -645,11 +645,11 @@ single_data = run_single_analysis(config)
 result = single_data['result']
 strong_signals = result[result['Signal'].str.contains('STRONG', na=False)]
 
-print(f"Найдено {len(strong_signals)} сильных сигналов за период")
+logger.info(f"Найдено {len(strong_signals)} сильных сигналов за период")
 
 # Показываем последние 5
 for idx, row in strong_signals.tail(5).iterrows():
-    print(f"{idx}: {row['Signal']} | Цена: ${row['close']:.2f} | Сила: {row['Signal_Strength']:.1f}")
+    logger.info(f"{idx}: {row['Signal']} | Цена: ${row['close']:.2f} | Сила: {row['Signal_Strength']:.1f}")
 
 Пример 4: Экспорт сигналов для TradingView
 config = AnalysisConfig(
@@ -721,7 +721,7 @@ from indicator import ExchangeDataLoader
 loader = ExchangeDataLoader('binance')
 loader.exchange.load_markets()
 btc_pairs = [s for s in loader.exchange.symbols if '/USDT' in s]
-print(f'Доступно {len(btc_pairs)} USDT пар')
+logger.info(f'Доступно {len(btc_pairs)} USDT пар')
 "
 Часто задаваемые вопросы
 
@@ -784,3 +784,82 @@ MA-CROSS-bot/
 ├── mtf_analyzer.py
 ├── run.py
 └── start.py
+
+БОТ РАБОТАЕТ В РУЧНОМ РЕЖИМЕ
+пример вывода в консоль:
+2026-06-23 05:18:43|INFO|__main__|
+🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷
+2026-06-23 05:18:43|INFO|__main__|ЗАПУСК АНАЛИЗА: BTC/USDT
+2026-06-23 05:18:43|INFO|__main__|🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷🔷
+2026-06-23 05:18:43|INFO|__main__|
+Активные режимы:
+2026-06-23 05:18:43|INFO|__main__|  MTF:     ✅ ВКЛ
+2026-06-23 05:18:43|INFO|__main__|  Single:  ✅ ВКЛ
+2026-06-23 05:18:43|INFO|__main__|  Compare: ✅ ВКЛ
+2026-06-23 05:18:43|INFO|mtf_analyzer|
+============================================================
+2026-06-23 05:18:43|INFO|mtf_analyzer| 📊 МУЛЬТИТАЙМФРЕЙМОВЫЙ АНАЛИЗ (КОНСЕНСУС): BTC/USDT
+2026-06-23 05:18:43|INFO|mtf_analyzer|============================================================
+2026-06-23 05:18:43|INFO|exchange|Загрузка данных BTC/USDT (1h) с Binance...
+2026-06-23 05:18:49|INFO|exchange|Загружено 500 свечей
+2026-06-23 05:18:49|INFO|exchange|Период: с 2026-06-02 07:00:00 по 2026-06-23 02:00:00
+2026-06-23 05:18:50|INFO|exchange|Загрузка данных BTC/USDT (4h) с Binance...
+2026-06-23 05:18:51|INFO|exchange|Загружено 500 свечей
+2026-06-23 05:18:51|INFO|exchange|Период: с 2026-03-31 20:00:00 по 2026-06-23 00:00:00
+2026-06-23 05:18:52|INFO|exchange|Загрузка данных BTC/USDT (1d) с Binance...
+2026-06-23 05:18:52|INFO|exchange|Загружено 500 свечей
+2026-06-23 05:18:52|INFO|exchange|Период: с 2025-02-09 00:00:00 по 2026-06-23 00:00:00
+2026-06-23 05:18:58|INFO|run|💾 Сохранено: MTF_BTC_USDT_1h_signals.csv
+2026-06-23 05:18:58|INFO|run|💾 Сохранено: MTF_BTC_USDT_4h_signals.csv
+2026-06-23 05:18:58|INFO|run|💾 Сохранено: MTF_BTC_USDT_1d_signals.csv
+2026-06-23 05:18:58|INFO|mtf_analyzer|
+ТФ           Цена Внутренний Сигнал           Сила Глобальный Тренд     Вес
+2026-06-23 05:18:58|INFO|mtf_analyzer|---------------------------------------------------------------------------
+2026-06-23 05:18:58|INFO|mtf_analyzer|1h     $ 64189.99 Sideways                     0.0 neutral_none        0.35
+2026-06-23 05:18:58|INFO|mtf_analyzer|4h     $ 64190.00 Sideways                     0.0 neutral_none        0.60
+2026-06-23 05:18:58|INFO|mtf_analyzer|1d     $ 64190.00 Neutral                    -30.0 down_moderate       0.85
+2026-06-23 05:18:58|INFO|mtf_analyzer|
+============================================================
+2026-06-23 05:18:58|INFO|mtf_analyzer| 🎯 МАТЕМАТИЧЕСКИЙ СИНТЕЗ СИСТЕМЫ
+2026-06-23 05:18:58|INFO|mtf_analyzer|============================================================
+2026-06-23 05:18:58|INFO|mtf_analyzer|Направление: ⚪ NEUTRAL
+2026-06-23 05:18:58|INFO|mtf_analyzer|Уверенность (Согласие): VERY HIGH (100.0%)
+2026-06-23 05:18:58|INFO|mtf_analyzer|Взвешенная Сила:  -14.2 / 100
+2026-06-23 05:18:58|INFO|mtf_analyzer|
+ 💡 ПРИКАЗ ДЛЯ ИСПОЛНИТЕЛЬНОГО МОДУЛЯ:
+2026-06-23 05:18:58|INFO|mtf_analyzer| 🛑 [ТОРГОВЛЯ ЗАБЛОКИРОВАНА] Нет рыночного консенсуса или обнаружен флэт. Ожидание.
+2026-06-23 05:18:58|INFO|run|
+============================================================
+2026-06-23 05:18:58|INFO|run|📊 ОДИНОЧНЫЙ АНАЛИЗ: BTC/USDT (4h)
+2026-06-23 05:18:58|INFO|run|============================================================
+2026-06-23 05:18:58|INFO|exchange|Загрузка данных BTC/USDT (4h) с Binance...
+2026-06-23 05:19:04|INFO|exchange|Загружено 500 свечей
+2026-06-23 05:19:04|INFO|exchange|Период: с 2026-03-31 20:00:00 по 2026-06-23 00:00:00
+2026-06-23 05:19:05|INFO|run|💾 Сохранено: csv_history/BTC_USDT_4h_signals.csv
+2026-06-23 05:19:05|INFO|run|
+📅 Последний сигнал: 2026-06-23 00:00:00
+2026-06-23 05:19:05|INFO|run|💰 Open: $64020.01
+2026-06-23 05:19:05|INFO|run|💰 Close: $64166.64
+2026-06-23 05:19:05|INFO|run|📊 MA(50): $64555.10
+2026-06-23 05:19:05|INFO|run|📊 EMA(100): $64940.57
+2026-06-23 05:19:05|INFO|run|📐 Угол MA: 0.41°
+2026-06-23 05:19:05|INFO|run|📐 Расхождение: 0.594%
+2026-06-23 05:19:05|INFO|run|🎯 Сигнал: Sideways
+2026-06-23 05:19:05|INFO|run|💪 Сила: 0.0
+2026-06-23 05:19:05|INFO|run|📈 Тренд: neutral_none
+2026-06-23 05:19:05|INFO|run|
+============================================================
+2026-06-23 05:19:05|INFO|run|📊 СРАВНЕНИЕ MTF vs SINGLE
+2026-06-23 05:19:05|INFO|run|============================================================
+2026-06-23 05:19:05|INFO|run|
+Параметр                  MTF                       SINGLE (4h)              
+2026-06-23 05:19:05|INFO|run|---------------------------------------------------------------------------
+2026-06-23 05:19:05|INFO|run|Направление               NEUTRAL                   Sideways                 
+2026-06-23 05:19:05|INFO|run|Сила                      -14.2                     0.0                      
+2026-06-23 05:19:05|INFO|run|Уверенность/Тренд         VERY HIGH                 neutral_none             
+2026-06-23 05:19:05|INFO|run|
+⚠️ Сигналы РАСХОДЯТСЯ - требуется осторожность
+2026-06-23 05:19:05|INFO|__main__|
+============================================================
+2026-06-23 05:19:05|INFO|__main__|✅ Анализ завершен успешно
+2026-06-23 05:19:05|INFO|__main__|============================================================
