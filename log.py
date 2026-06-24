@@ -1,6 +1,38 @@
+"""
+Модуль логирования.
+Логирует в консоль, файл и отправляет WARNING в ntfy.
+"""
+
 import sys
 from pathlib import Path
 from loguru import logger
+from python_ntfy import NtfyClient, MessagePriority
+
+# ── Ntfy ────────────────────────────────────────────────
+NTFY_TOPIC = "ma_cross_24n14"
+ntfy_client = NtfyClient(topic=NTFY_TOPIC)
+
+
+# ── Кастомный handler для ntfy ──────────────────────────
+def ntfy_handler(message):
+    """Отправляет WARNING сообщения в ntfy"""
+    text = message.record["message"].strip()
+    text_upper = text.upper()
+
+    if "BULLISH" in text_upper:
+        title = f"🟢 {text.split(chr(10))[0][:50]}"
+    elif "BEARISH" in text_upper:
+        title = f"🔴 {text.split(chr(10))[0][:50]}"
+    else:
+        title = f"⚠️ {text.split(chr(10))[0][:50]}"
+
+    priority = MessagePriority.HIGH if "STRONG" in text_upper else MessagePriority.DEFAULT
+
+    try:
+        ntfy_client.send(message=text, title=title, priority=priority)
+    except Exception:  # noqa
+        pass
+
 
 logger.remove()
 
@@ -23,4 +55,11 @@ logger.add(
     rotation="10 MB",
     retention="7 days",
     encoding="utf-8"
+)
+
+# ── Ntfy handler: только WARNING ─────────────────────────
+logger.add(
+    ntfy_handler,
+    level="WARNING",
+    format="{message}",
 )
