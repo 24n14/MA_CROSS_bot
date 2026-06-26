@@ -1,14 +1,26 @@
 """
 Точка входа. Мониторинг рынка 15m + MTF при сигнале.
 """
-
 import time
 import traceback
 from log import logger
-from config import Config
+from config import Config, AnalysisConfig
 from exchange import ExchangeDataLoader
 from indicator import AdvancedTrendSignalIndicator
-from mtf_analyzer import MultiTimeframeAnalyzer
+from run import run_mtf_analysis, print_mtf_result
+
+
+def timeframe_to_seconds(tf: str) -> int:
+    """Конвертировать таймфрейм в секунды для интервала опроса."""
+    multipliers = {
+        'm': 60,
+        'h': 3600,
+        'd': 86400,
+        'w': 604800
+    }
+    value = int(tf[:-1])
+    unit = tf[-1]
+    return value * multipliers.get(unit, 60)
 
 
 def is_entry_signal(signal: str) -> bool:
@@ -42,17 +54,21 @@ def format_mtf_message(analysis: dict, symbol: str) -> str:
 
 def main():
     # ==========================================
-    # НАСТРОЙКИ
+    # НАСТРОЙКИ (из config.py)
     # ==========================================
-    SYMBOL = 'BTC/USDT'
-    EXCHANGE = 'binance'
-    MONITOR_TIMEFRAME = '15m'
-    MTF_TIMEFRAMES = ['15m', '1h', '4h']
-    LIMIT = 300
-    SLEEP_SECONDS = 900  # 15 минут
+    cfg = AnalysisConfig()
+
+    SYMBOL = cfg.symbol
+    EXCHANGE = cfg.exchange
+    MONITOR_TIMEFRAME = cfg.monitor_timeframe
+    MTF_TIMEFRAMES = list(cfg.mtf_timeframes)
+    LIMIT = cfg.limit
+    SLEEP_SECONDS = timeframe_to_seconds(MONITOR_TIMEFRAME)
 
     logger.info("=" * 50)
-    logger.info(f"🚀 Бот запущен: {SYMBOL} | Мониторинг {MONITOR_TIMEFRAME} | MTF {MTF_TIMEFRAMES}")
+    logger.info(f"🚀 Бот запущен: {SYMBOL}")
+    logger.info(f"📊 Мониторинг: {MONITOR_TIMEFRAME} | MTF: {MTF_TIMEFRAMES}")
+    logger.info(f"🕐 Интервал: {SLEEP_SECONDS}с ({SLEEP_SECONDS // 60} мин)")
     logger.info("=" * 50)
 
     loader = ExchangeDataLoader(EXCHANGE)
@@ -63,7 +79,7 @@ def main():
 
     try:
         while True:
-            # ─── Анализ 15m ───
+            # ─── Анализ таймфрейма мониторинга ───
             df = loader.fetch_ohlcv(SYMBOL, MONITOR_TIMEFRAME, LIMIT)
 
             if df is None:
@@ -74,27 +90,44 @@ def main():
             result = monitor_indicator.generate_signal(df)
             current_signal = result['Signal'].iloc[-1]
             current_close = result['close'].iloc[-1]
+            current_strength = result['Signal_Strength'].iloc[-1]
+            current_trend_state = result['Trend_State'].iloc[-1]
+            current_ma = result['MA'].iloc[-1] if 'MA' in result.columns else 0
+            current_ema = result['EMA'].iloc[-1] if 'EMA' in result.columns else 0
+            current_adx = result['ADX'].iloc[-1] if 'ADX' in result.columns else 0
+            current_atr = result['ATR'].iloc[-1] if 'ATR' in result.columns else 0
+            current_ma_angle = result['MA_Angle_Final'].iloc[-1] if 'MA_Angle_Final' in result.columns else 0
 
-            logger.info(f"15m: ${current_close:.2f} | {current_signal} | ожидание {SLEEP_SECONDS // 60} мин")
+            # Эмодзи для сигнала
+            signal_emoji = '🟢' if 'BULLISH' in str(current_signal).upper() else '🔴' if 'BEARISH' in str(
+                current_signal).upper() else '⚪'
 
+            # Эмодзи для тренда
+            trend_emoji = '📈' if 'up' in str(current_trend_state).lower() else '📉' if 'down' in str(
+                current_trend_state).lower() else '➡️'
+            # Форматированный вывод
+            logger.info(f"{'─' * 60}")
+            logger.info(f"{signal_emoji} {MONITOR_TIMEFRAME} | {current_signal:<20} | ${current_close:<.2f}")
+            logger.info(f"   {trend_emoji} Тренд: {current_trend_state:<20} | Сила сигнала: {current_strength:>+.1f}")
+            logger.info(f"   📐 Угол MA: {current_ma_angle:>+.1f}° | ADX: {current_adx:<.1f} | ATR: ${current_atr:<.2f}")
+            logger.info(f"   📊 MA: ${current_ma:<.2f} | EMA: ${current_ema:<.2f}")
+            logger.info(f"{'─' * 60}")
+
+            logger.info(f"{MONITOR_TIMEFRAME}: ${current_close:.2f} | {current_signal} | ожидание {SLEEP_SECONDS // 60} мин")
             signal_changed = (last_signal is None) or (last_signal != current_signal)
 
             # ─── Сигнал входа → MTF ───
             if signal_changed and is_entry_signal(current_signal):
                 logger.info(f"⚡ Сигнал: {current_signal} → запуск MTF")
+                analysis_data = run_mtf_analysis(cfg)
 
-                mtf = MultiTimeframeAnalyzer(
-                    timeframes=MTF_TIMEFRAMES,
-                    exchange_name=EXCHANGE,
-                    symbol=SYMBOL
-                )
-                analysis = mtf.load_and_analyze(limit=LIMIT)
-
-                if analysis:
+                if analysis_data and analysis_data['analysis']:
+                    analysis = analysis_data['analysis']
+                    mtf = analysis_data['analyzer']
                     mtf.print_analysis(analysis)
                     message = format_mtf_message(analysis, SYMBOL)
-                    # Вот здесь — logger.warning сам отправит в ntfy!
-                    logger.warning(message)
+                    print_mtf_result(analysis_data, cfg)
+                    logger.warning(message)  # Отправится в ntfy
                 else:
                     logger.error("MTF анализ не удался")
 

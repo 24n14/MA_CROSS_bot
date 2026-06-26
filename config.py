@@ -78,14 +78,13 @@ class AnalysisConfig:
     """
     Конфигурация режимов анализа и централизованного риск-менеджмента.
     """
-    enable_mtf: bool = True
-    enable_single: bool = False
-    enable_compare: bool = False
     symbol: str = 'BTC/USDT'
     exchange: str = 'binance'
     limit: int = 500
+
     mtf_timeframes: tuple = ('1h', '4h', '1d')
-    single_timeframe: str = '4h'
+    monitor_timeframe: str = '5m'
+
     save_csv: bool = True
     verbose: bool = True
 
