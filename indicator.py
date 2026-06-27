@@ -65,7 +65,8 @@ class AdvancedTrendSignalIndicator:
     def determine_trend_strength(self, ma_angle: float, ema_angle: float, divergence: float,
                                  current_adx: float) -> Dict:
         """
-        Определение направления и силы тренда с учетом ADX-фильтра флэта.
+        Определение направления и силы тренда с учетом ADX-фильтра флэта
+        и фильтра расхождения MA/EMA (divergence_threshold).
         """
         trend_info = {
             'direction': 'neutral',
@@ -88,6 +89,14 @@ class AdvancedTrendSignalIndicator:
 
         # Определение силы тренда (на основе углов, ADX и расхождения)
         avg_angle_abs = (abs(ma_angle) + abs(ema_angle)) / 2
+
+        # --- ФИЛЬТР ПО РАСХОЖДЕНИЮ MA/EMA ---
+        # Если расхождение меньше порога — MA и EMA почти совпадают,
+        # тренд не подтверждён, снижаем силу до weak
+        if divergence < self.config.divergence_threshold:
+            trend_info['strength'] = 'weak'
+            trend_info['confidence'] = 0.4
+            return trend_info
 
         if avg_angle_abs >= self.config.angle_threshold_strong and current_adx > 35.0:
             trend_info['strength'] = 'strong'
