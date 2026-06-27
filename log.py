@@ -9,6 +9,9 @@ from pathlib import Path
 from loguru import logger
 import requests
 from python_ntfy import MessagePriority
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ── Ntfy ────────────────────────────────────────────────
 NTFY_TOPIC = "ma_cross_24n14"
