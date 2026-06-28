@@ -23,10 +23,37 @@ def timeframe_to_seconds(tf: str) -> int:
     return value * multipliers.get(unit, 60)
 
 
-def is_entry_signal(signal: str) -> bool:
-    """Проверка, является ли сигнал входом в рынок"""
+def is_entry_signal(signal: str, strength: float = 0, raw_direction: str = 'neutral') -> bool:
+    """
+    Проверка, является ли сигнал входом в рынок.
+
+    Args:
+        signal: отфильтрованный сигнал (Neutral, Bullish и т.д.)
+        strength: сила сигнала (-100..100)
+        raw_direction: сырое направление тренда ('up', 'down', 'neutral')
+
+    Returns:
+        True если нужно запустить MTF анализ
+    """
     signal_upper = str(signal).upper()
-    return any(kw in signal_upper for kw in ['STRONG', 'REVERSAL'])
+
+    # 1. Если сигнал уже содержит ключевые слова
+    if any(kw in signal_upper for kw in ['STRONG', 'REVERSAL']):
+        logger.debug(f"✅ Сигнал '{signal}' — содержит ключевое слово")
+        return True
+
+    # 2. Если сигнал 'Bullish' или 'Bearish' (без STRONG, но все равно значимый)
+    if signal in ['Bullish', 'Bearish'] and abs(strength) >= 30:
+        logger.debug(f"✅ Сигнал '{signal}' — moderate с силой {strength}")
+        return True
+
+    # 3. НОВОЕ: Если сырая сила >= 50 и есть четкое направление
+    if abs(strength) >= 50 and raw_direction in ['up', 'down']:
+        logger.debug(f"✅ Сигнал '{signal}' — сила {strength} > 50, направление {raw_direction}")
+        return True
+
+    logger.debug(f"❌ Сигнал '{signal}' (сила={strength}, направление={raw_direction}) — пропущен")
+    return False
 
 
 def format_mtf_message(analysis: dict, symbol: str) -> str:
@@ -83,7 +110,7 @@ def main():
             df = loader.fetch_ohlcv(SYMBOL, MONITOR_TIMEFRAME, LIMIT)
 
             if df is None:
-                logger.warning("Нет данных, ждем следующий цикл")
+                logger.info("Нет данных, ждем следующий цикл")
                 time.sleep(SLEEP_SECONDS)
                 continue
 
@@ -92,6 +119,8 @@ def main():
             current_close = result['close'].iloc[-1]
             current_strength = result['Signal_Strength'].iloc[-1]
             current_trend_state = result['Trend_State'].iloc[-1]
+            current_raw_direction = result['Raw_Direction'].iloc[-1]  # НОВОЕ
+            current_raw_signal = result['Raw_Signal'].iloc[-1]  # НОВОЕ
             current_ma = result['MA'].iloc[-1] if 'MA' in result.columns else 0
             current_ema = result['EMA'].iloc[-1] if 'EMA' in result.columns else 0
             current_adx = result['ADX'].iloc[-1] if 'ADX' in result.columns else 0
@@ -108,17 +137,23 @@ def main():
             # Форматированный вывод
             logger.info(f"{'─' * 60}")
             logger.warning(f"{signal_emoji} {MONITOR_TIMEFRAME} | {current_signal:<20} | ${current_close:<.2f}")
-            logger.warning(f"   {trend_emoji} Тренд: {current_trend_state:<20} | Сила сигнала: {current_strength:>+.1f}")
-            logger.warning(f"   📐 Угол MA: {current_ma_angle:>+.1f}° | ADX: {current_adx:<.1f} | ATR: ${current_atr:<.2f}")
-            logger.warning(f"   📊 MA: ${current_ma:<.2f} | EMA: ${current_ema:<.2f}")
+            logger.warning(f"{trend_emoji} Тренд: {current_trend_state:<20} | Сила сигнала: {current_strength:>+.1f}")
+            logger.warning(f"📐 Угол MA: {current_ma_angle:>+.1f}° | ADX: {current_adx:<.1f} | ATR: ${current_atr:<.2f}")
+            logger.warning(f"📊 MA: ${current_ma:<.2f} | EMA: ${current_ema:<.2f}")
             logger.info(f"{'─' * 60}")
 
-            logger.info(f"{MONITOR_TIMEFRAME}: ${current_close:.2f} | {current_signal} | ожидание {SLEEP_SECONDS // 60} мин")
+            logger.info(
+                f"{MONITOR_TIMEFRAME}: ${current_close:.2f} | {current_signal} | ожидание {SLEEP_SECONDS // 60} мин")
             signal_changed = (last_signal is None) or (last_signal != current_signal)
 
             # ─── Сигнал входа → MTF ───
-            if signal_changed and is_entry_signal(current_signal):
-                logger.info(f"⚡ Сигнал: {current_signal} → запуск MTF")
+            if signal_changed and is_entry_signal(
+                    signal=current_signal,
+                    strength=current_strength,
+                    raw_direction=current_raw_direction
+            ):
+                logger.info(f"⚡ Сигнал: {current_signal} (сила={current_strength}, "
+                            f"направление={current_raw_direction}) → запуск MTF")
                 analysis_data = run_mtf_analysis(cfg)
 
                 if analysis_data and analysis_data['analysis']:

@@ -28,7 +28,6 @@ class AdvancedTrendSignalIndicator:
 
     def calculate_angle(self, series: pd.Series, atr: pd.Series) -> pd.Series:
         """
-        МАТЕМАТИЧЕСКАЯ ОШИБКА ИСПРАВЛЕНА.
         Расчет угла наклона скользящей средней, нормализованный по волатильности (ATR).
         Использует линейную регрессию за период trend_lookback.
         """
@@ -110,6 +109,7 @@ class AdvancedTrendSignalIndicator:
 
         return trend_info
 
+
     def generate_signal(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Генерация сигналов с комплексной фильтрацией волатильности и флэта.
@@ -140,6 +140,8 @@ class AdvancedTrendSignalIndicator:
         signals = []
         signal_strengths = []
         trend_states = []
+        raw_directions = []  # НОВОЕ: реальное направление без фильтрации
+        raw_strengths = []  # НОВОЕ: реальная сила без фильтрации
 
         for i in range(len(df)):
             current_ma = df['MA'].iloc[i]
@@ -150,6 +152,8 @@ class AdvancedTrendSignalIndicator:
                 signals.append('Нет данных')
                 signal_strengths.append(0)
                 trend_states.append('neutral_none')
+                raw_directions.append('neutral')  # НОВОЕ
+                raw_strengths.append(0)  # НОВОЕ
                 continue
 
             current_close = df['close'].iloc[i]
@@ -165,7 +169,14 @@ class AdvancedTrendSignalIndicator:
                 current_adx=current_adx
             )
 
-            # Генерация отфильтрованного сигнала
+            # === НОВОЕ: Сохраняем "сырые" значения ДО фильтрации ===
+            raw_direction = trend_info['direction']  # 'up', 'down' или 'neutral'
+            raw_strength = self._calculate_signal_strength(trend_info, is_bullish, is_bearish)
+
+            raw_directions.append(raw_direction)
+            raw_strengths.append(raw_strength)
+
+            # Генерация отфильтрованного сигнала (как было)
             signal = self._get_enhanced_signal(
                 current_close, current_open, current_ma, current_ema,
                 is_bullish, is_bearish, trend_info
@@ -182,6 +193,11 @@ class AdvancedTrendSignalIndicator:
         df['Signal_Strength'] = signal_strengths
         df['Trend_State'] = trend_states
         df['MA_Angle_Final'] = df['MA_Angle']
+
+        # === НОВОЕ: Добавляем сырые колонки ===
+        df['Raw_Direction'] = raw_directions
+        df['Raw_Signal'] = raw_strengths
+
         df['Trend_Confidence'] = df['Trend_State'].apply(
             lambda x: 0.9 if 'strong' in str(x) else (0.7 if 'moderate' in str(x) else 0.3)
         )

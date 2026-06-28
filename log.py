@@ -30,54 +30,66 @@ if PROXY_HOST and PROXY_PORT:
     )
     _proxies = {'http': proxy_url, 'https': proxy_url}
 
-    # Проверка IP
     try:
         test_ip = requests.get(
             'https://api.ipify.org', proxies=_proxies, timeout=10
         ).text
-        logger.info(f"✅ Внешний IP через прокси: {test_ip}")
+        print(f"✅ Внешний IP через прокси: {test_ip}")
     except Exception as e:
-        logger.error(f"❌ Не удалось проверить IP через прокси: {e}")
+        print(f"❌ Не удалось проверить IP через прокси: {e}")
 
 
-def _send_ntfy(message: str, title: str, priority: int) -> None:
-    """Отправляет уведомление в ntfy через requests (с прокси если настроен)"""
+def _send_ntfy(message: str, priority: int) -> None:
+    """Отправляет уведомление в ntfy через requests"""
     url = f"https://ntfy.sh/{NTFY_TOPIC}"
-    payload = {
-        "topic": NTFY_TOPIC,
-        "message": message,
-        "title": title,
-        "priority": priority,
+
+    # 🔥 Заголовок - короткий (минимальный) или пустой
+    # Используем пустой заголовок, чтобы не дублировать сообщение
+    headers = {
+        "Title": ".",  # <-- Минимальный заголовок (точка), можно оставить пустым
+        "Priority": str(priority),
+        "Tags": "warning",
+        "Content-Type": "text/plain; charset=utf-8"
     }
+
     try:
         if _proxies:
-            requests.post(url, json=payload, proxies=_proxies, timeout=10)
+            response = requests.post(
+                url,
+                data=message.encode('utf-8'),
+                headers=headers,
+                proxies=_proxies,
+                timeout=10
+            )
         else:
-            requests.post(url, json=payload, timeout=10)
-    except Exception:
-        pass
+            response = requests.post(
+                url,
+                data=message.encode('utf-8'),
+                headers=headers,
+                timeout=10
+            )
+
+        if response.status_code != 200:
+            logger.error(f"ntfy ошибка: {response.status_code} - {response.text}")
+
+    except Exception as e:
+        logger.error(f"ntfy не отправлено: {e}")
 
 
-# ── Кастомный handler для ntfy ──────────────────────────
 def ntfy_handler(message):
-    """Отправляет WARNING сообщения в ntfy"""
+    """Обработчик для отправки WARNING сообщений в ntfy"""
     text = message.record["message"].strip()
     text_upper = text.upper()
 
-    if "BULLISH" in text_upper:
-        title = f"🟢 {text.split(chr(10))[0][:50]}"
-    elif "BEARISH" in text_upper:
-        title = f"🔴 {text.split(chr(10))[0][:50]}"
-    else:
-        title = f"⚠️ {text.split(chr(10))[0][:50]}"
-
+    # Определяем приоритет
     priority = (
         MessagePriority.HIGH.value
-        if "STRONG" in text_upper
+        if "STRONG" in text_upper or "СИЛЬНЫЙ" in text
         else MessagePriority.DEFAULT.value
     )
 
-    _send_ntfy(message=text, title=title, priority=priority)
+    # 🔥 Отправляем ТОЛЬКО тело сообщения (без заголовка)
+    _send_ntfy(message=text, priority=priority)
 
 
 logger.remove()
