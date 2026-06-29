@@ -12,7 +12,7 @@ from typing import Dict
 from log import logger
 from config import AnalysisConfig
 from mtf_analyzer import MultiTimeframeAnalyzer
-from exchange import ExchangeDataLoader
+
 
 # Папка для сохранения CSV
 CSV_DIR = 'csv_history'
@@ -82,11 +82,11 @@ def print_mtf_result(mtf_data: Dict, analysis_config: AnalysisConfig):
     logger.info(f"📊 Согласие ТФ: {final['agreement']}%")
 
     logger.info(f"\n{'─' * 50}")
-    logger.info(f"{'Таймфрейм':<15} {'Сигнал':<20} {'Цена':<15}")
+    logger.info(f"{'Таймфрейм':} {'Сигнал':} {'Цена':}")
     logger.info(f"{'─' * 50}")
 
     for item in details:
         tf = item['timeframe']
         signal = item['signal']
         close = item['close']
-        logger.info(f"{tf:<15} {signal:<20} ${close:<10.2f}")
+        logger.info(f"{tf:} {signal:} ${close:.2f}")

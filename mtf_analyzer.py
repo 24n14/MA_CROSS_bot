@@ -183,11 +183,11 @@ class MultiTimeframeAnalyzer:
         final = analysis['final_signal']
         details = analysis['mtf_details']
 
-        logger.info(f"\n{'ТФ':<6} {'Цена':>10} {'Внутренний Сигнал':<25} {'Сила':>6} {'Глобальный Тренд':<18} {'Вес':>5}")
+        logger.info(f"\n{'ТФ':>33} | {'Цена':>7} | {'Сигнал':} | {'Сила':} | {'Тренд':>5} | {'Вес':}")
         logger.info("-" * 75)
         for item in details:
             logger.info(
-                f"{item['timeframe']:<6} ${item['close']:>9.2f} {item['signal']:<25} {item['strength']:>6.1f} {item['trend']:<18} {item['weight']:>5.2f}")
+                f"{item['timeframe']:} | ${item['close']:.2f} | {item['signal']:} | {item['strength']:.1f} | {item['trend']:} | {item['weight']:.2f}")
 
         logger.info(f"\n{'=' * 60}")
         logger.info(f" 🎯 МАТЕМАТИЧЕСКИЙ СИНТЕЗ СИСТЕМЫ")
@@ -201,4 +201,4 @@ class MultiTimeframeAnalyzer:
         if final['trigger_trade']:
             logger.info(f" 🔥 [ВХОД РАЗРЕШЕН] Открывать позицию {final['direction']} с полным АТР риск-профилем.")
         else:
-            logger.info(" 🛑 [ТОРГОВЛЯ ЗАБЛОКИРОВАНА] Нет рыночного консенсуса или обнаружен флэт. Ожидание.")
+            logger.info(" 🛑 [ТОРГ БЛОКИРОВАН] Нет консенсуса или флэт. Ожидание.")

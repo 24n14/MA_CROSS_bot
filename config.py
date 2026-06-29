@@ -29,7 +29,7 @@ class Config:
         # Младшие таймфреймы (скальпинг/интрадей шумы)
         if timeframe in ['1m', '5m', '15m']:
             return cls(
-                ma_period=9,  # Короткая быстрая скользящая
+                ma_period=5,  # Короткая быстрая скользящая
                 ema_period=21,  # Экспоненциальная средняя для фильтрации шума
                 trend_lookback=14,  # Увеличен lookback для защиты от резких шпилек
                 angle_threshold_strong=25.0,  # Оптимизированные углы под ATR-регрессию
@@ -40,7 +40,7 @@ class Config:
         # Средние таймфреймы
         elif timeframe in ['30m', '1h']:
             return cls(
-                ma_period=20,
+                ma_period=10,
                 ema_period=50,
                 trend_lookback=14,
                 angle_threshold_strong=20.0,
@@ -51,7 +51,7 @@ class Config:
         # Трендовый таймфрейм (основной рабочий)
         elif timeframe in ['4h']:
             return cls(
-                ma_period=50,
+                ma_period=20,
                 ema_period=100,
                 trend_lookback=20,
                 angle_threshold_strong=15.0,
@@ -80,9 +80,9 @@ class AnalysisConfig:
     """
     symbol: str = 'BTC/USDT'
     exchange: str = 'binance'
-    limit: int = 500
+    limit: int = 300
 
-    mtf_timeframes: tuple = ('1h', '4h', '1d')
+    mtf_timeframes: tuple = ('5m', '15m', '1h')
 
     save_csv: bool = True
     verbose: bool = True
