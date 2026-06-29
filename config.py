@@ -83,7 +83,6 @@ class AnalysisConfig:
     limit: int = 500
 
     mtf_timeframes: tuple = ('1h', '4h', '1d')
-    monitor_timeframe: str = '5m'
 
     save_csv: bool = True
     verbose: bool = True
