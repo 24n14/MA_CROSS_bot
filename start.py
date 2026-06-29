@@ -136,8 +136,8 @@ def main():
                 current_trend_state).lower() else '➡️'
             # Форматированный вывод
             logger.info(f"{'─' * 60}")
-            logger.info(f"{signal_emoji} {MONITOR_TIMEFRAME} | {current_signal:<20} | ${current_close:<.2f}")
-            logger.info(f"{trend_emoji} Тренд: {current_trend_state:<20} | Сила сигнала: {current_strength:>+.1f}")
+            logger.info(f"{signal_emoji} {MONITOR_TIMEFRAME} | {current_signal:} | ${current_close:<.2f}")
+            logger.info(f"{trend_emoji} Тренд: {current_trend_state:} | Сила сигнала: {current_strength:>+.1f}")
             logger.info(f"📐 Угол MA: {current_ma_angle:>+.1f}° | ADX: {current_adx:<.1f} | ATR: ${current_atr:<.2f}")
             logger.info(f"📊 MA: ${current_ma:<.2f} | EMA: ${current_ema:<.2f}")
             logger.info(f"{'─' * 60}")
