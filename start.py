@@ -38,15 +38,21 @@ def main():
                 mtf.print_analysis(analysis)
                 print_mtf_result(analysis_data, cfg)
 
-                # Логируем финальный сигнал для ntfy
+                # Финальный сигнал
                 final = analysis['final_signal']
                 emoji = '🟢' if final['direction'] == 'BULLISH' else '🔴' if final['direction'] == 'BEARISH' else '⚪'
-                logger.warning(
+                signal_msg = (
                     f"{emoji} {SYMBOL} — {final['direction']} | "
                     f"Уверенность: {final['confidence']} | "
                     f"Сила: {final['strength']:.1f} | "
                     f"Согласие ТФ: {final['agreement']}%"
                 )
+
+                # В ntfy отправляем только если сигнал BULLISH/BEARISH и сила > 0
+                if final['direction'] in ('BULLISH', 'BEARISH') and final['strength'] > 0:
+                    logger.warning(signal_msg)
+                else:
+                    logger.info(signal_msg)
             else:
                 logger.error("❌ MTF анализ не удался")
 
