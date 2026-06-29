@@ -17,13 +17,15 @@ load_dotenv()
 NTFY_TOPIC = "ma_cross_24n14"
 
 # ── Прокси ──────────────────────────────────────────────
+USE_PROXY = False  # False - отключено, True - включено
+
 PROXY_USER = os.getenv("PROXY_USER", "")
 PROXY_PASS = os.getenv("PROXY_PASS", "")
 PROXY_HOST = os.getenv("PROXY_HOST", "")
 PROXY_PORT = os.getenv("PROXY_PORT", "")
 
 _proxies = None
-if PROXY_HOST and PROXY_PORT:
+if USE_PROXY and PROXY_HOST and PROXY_PORT:
     proxy_url = (
         f"http://{PROXY_USER}:{PROXY_PASS}@"
         f"{PROXY_HOST}:{PROXY_PORT}"

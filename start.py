@@ -93,8 +93,8 @@ def main():
     SLEEP_SECONDS = timeframe_to_seconds(MONITOR_TIMEFRAME)
 
     logger.info("=" * 50)
-    logger.warning(f"🚀 Бот запущен: {SYMBOL}")
-    logger.warning(f"📊 Мониторинг: {MONITOR_TIMEFRAME} | MTF: {MTF_TIMEFRAMES}")
+    logger.info(f"🚀 Бот запущен: {SYMBOL}")
+    logger.info(f"📊 Мониторинг: {MONITOR_TIMEFRAME} | MTF: {MTF_TIMEFRAMES}")
     logger.info(f"🕐 Интервал: {SLEEP_SECONDS}с ({SLEEP_SECONDS // 60} мин)")
     logger.info("=" * 50)
 
@@ -136,10 +136,10 @@ def main():
                 current_trend_state).lower() else '➡️'
             # Форматированный вывод
             logger.info(f"{'─' * 60}")
-            logger.warning(f"{signal_emoji} {MONITOR_TIMEFRAME} | {current_signal:<20} | ${current_close:<.2f}")
-            logger.warning(f"{trend_emoji} Тренд: {current_trend_state:<20} | Сила сигнала: {current_strength:>+.1f}")
-            logger.warning(f"📐 Угол MA: {current_ma_angle:>+.1f}° | ADX: {current_adx:<.1f} | ATR: ${current_atr:<.2f}")
-            logger.warning(f"📊 MA: ${current_ma:<.2f} | EMA: ${current_ema:<.2f}")
+            logger.info(f"{signal_emoji} {MONITOR_TIMEFRAME} | {current_signal:<20} | ${current_close:<.2f}")
+            logger.info(f"{trend_emoji} Тренд: {current_trend_state:<20} | Сила сигнала: {current_strength:>+.1f}")
+            logger.info(f"📐 Угол MA: {current_ma_angle:>+.1f}° | ADX: {current_adx:<.1f} | ATR: ${current_atr:<.2f}")
+            logger.info(f"📊 MA: ${current_ma:<.2f} | EMA: ${current_ema:<.2f}")
             logger.info(f"{'─' * 60}")
 
             logger.info(
