@@ -2,7 +2,7 @@
 Оптимизированный модуль мультитаймфреймового анализа с взвешенным консенсусом
 и защитой от рассинхронизации трендов.
 """
-from typing import Dict, List
+from typing import Dict, List, Optional
 from datetime import datetime
 from config import Config
 from exchange import ExchangeDataLoader
@@ -15,6 +15,11 @@ class MultiTimeframeAnalyzer:
     Мультитаймфреймовый анализатор.
     Математически агрегирует сигналы с учетом весов и жестко блокирует торговлю
     в моменты рассинхронизации старших и младших периодов.
+
+    Оптимизация загрузки:
+    - При первом запуске загружает limit свечей для каждого ТФ
+    - В последующих циклах догружает только новые закрытые свечи
+    - Хранит кеш DataFrame'ов в self._cached_data
     """
     # Математические веса таймфреймов (младшие не могут перевесить старшую структуру)
     TF_WEIGHTS = {
@@ -37,23 +42,38 @@ class MultiTimeframeAnalyzer:
             tf: AdvancedTrendSignalIndicator(Config.for_timeframe(tf))
             for tf in self.timeframes
         }
+        # Кеш для хранения загруженных данных между циклами
+        self._cached_data: Dict[str, Optional[pd.DataFrame]] = {}
 
     def load_and_analyze(self, limit: int = 500) -> Dict:
         """
         Загружает данные и проводит скоринговый MTF анализ.
+        При повторных вызовах догружает только новые свечи.
+
+        Args:
+            limit: максимальное количество свечей для хранения
+
+        Returns:
+            Словарь с результатами анализа
         """
         logger.info(f"\n{'=' * 60}")
         logger.info(f" 📊 MTF АНАЛИЗ (КОНСЕНСУС): {self.symbol}")
         logger.info(f"{'=' * 60}")
 
-        data = self.loader.load_multiple_timeframes(
+        # Инкрементальная загрузка — догружаем только новые свечи
+        data = self.loader.load_multiple_timeframes_incremental(
             self.symbol,
             timeframes=self.timeframes,
+            cached_data=self._cached_data,
             limit=limit
         )
+
         if not data:
             logger.info(" ❌ Не удалось загрузить данные с биржи")
             return None
+
+        # Сохраняем в кеш для следующего цикла
+        self._cached_data = data
 
         results = {}
         mtf_summary = []

@@ -8,7 +8,7 @@
 - print_comparison: сравнение MTF и Single
 """
 import os
-from typing import Dict
+from typing import Dict, Optional
 from log import logger
 from config import AnalysisConfig
 from mtf_analyzer import MultiTimeframeAnalyzer
@@ -23,21 +23,40 @@ def _ensure_csv_dir():
     os.makedirs(CSV_DIR, exist_ok=True)
 
 
-def run_mtf_analysis(analysis_config: AnalysisConfig) -> Dict:
+def create_mtf_analyzer(analysis_config: AnalysisConfig) -> MultiTimeframeAnalyzer:
     """
-    Запуск мультитаймфреймового анализа.
+    Создание MTF анализатора (один раз при старте).
 
     Args:
         analysis_config: конфигурация режимов
 
     Returns:
-        Словарь с анализатором и результатами
+        Экземпляр MultiTimeframeAnalyzer
     """
-    mtf = MultiTimeframeAnalyzer(
+    return MultiTimeframeAnalyzer(
         timeframes=list(analysis_config.mtf_timeframes),
         exchange_name=analysis_config.exchange,
         symbol=analysis_config.symbol
     )
+
+
+def run_mtf_analysis(analysis_config: AnalysisConfig,
+                     mtf_analyzer: Optional[MultiTimeframeAnalyzer] = None) -> Dict:
+    """
+    Запуск мультитаймфреймового анализа.
+    При повторных вызовах с тем же анализатором догружает только новые свечи.
+
+    Args:
+        analysis_config: конфигурация режимов
+        mtf_analyzer: существующий анализатор (если None — создаётся новый)
+
+    Returns:
+        Словарь с анализатором и результатами
+    """
+    if mtf_analyzer is None:
+        mtf = create_mtf_analyzer(analysis_config)
+    else:
+        mtf = mtf_analyzer
 
     analysis = mtf.load_and_analyze(limit=analysis_config.limit)
 
@@ -101,5 +120,5 @@ def print_mtf_result(mtf_data: Dict, analysis_config: AnalysisConfig):
         ma = last.get('MA', close)
         ema = last.get('EMA', close)
 
-        logger.info(f" 📐 Угол MA: {ma_angle:+.1f}° | ADX: {adx:.1f} | ATR: ${atr:.2f}")
-        logger.info(f" 📊 MA: ${ma:.2f} | EMA: ${ema:.2f}")
+        logger.info(f"  📐 Угол MA: {ma_angle:+.1f}° | ADX: {adx:.1f} | ATR: ${atr:.2f}")
+        logger.info(f"  📊 MA: ${ma:.2f} | EMA: ${ema:.2f}")
