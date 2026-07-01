@@ -101,5 +101,5 @@ def print_mtf_result(mtf_data: Dict, analysis_config: AnalysisConfig):
         ma = last.get('MA', close)
         ema = last.get('EMA', close)
 
-        logger.info(f"  📐 Угол MA: {ma_angle:+.1f}° | ADX: {adx:.1f} | ATR: ${atr:.2f}")
-        logger.info(f"  📊 MA: ${ma:.2f} | EMA: ${ema:.2f}")
+        logger.info(f" 📐 Угол MA: {ma_angle:+.1f}° | ADX: {adx:.1f} | ATR: ${atr:.2f}")
+        logger.info(f" 📊 MA: ${ma:.2f} | EMA: ${ema:.2f}")

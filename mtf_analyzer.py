@@ -43,7 +43,7 @@ class MultiTimeframeAnalyzer:
         Загружает данные и проводит скоринговый MTF анализ.
         """
         logger.info(f"\n{'=' * 60}")
-        logger.info(f" 📊 МУЛЬТИТАЙМФРЕЙМОВЫЙ АНАЛИЗ (КОНСЕНСУС): {self.symbol}")
+        logger.info(f" 📊 MTF АНАЛИЗ (КОНСЕНСУС): {self.symbol}")
         logger.info(f"{'=' * 60}")
 
         data = self.loader.load_multiple_timeframes(
