@@ -90,3 +90,16 @@ def print_mtf_result(mtf_data: Dict, analysis_config: AnalysisConfig):
         signal = item['signal']
         close = item['close']
         logger.info(f"{tf:} {signal:} ${close:.2f}")
+
+        # Подробные данные по индикаторам для каждого таймфрейма
+        result_df = analysis['results'][tf]
+        last = result_df.iloc[-1]
+
+        ma_angle = last.get('MA_Angle_Final', 0.0)
+        adx = last.get('ADX', 0.0)
+        atr = last.get('ATR', 0.0)
+        ma = last.get('MA', close)
+        ema = last.get('EMA', close)
+
+        logger.info(f"  📐 Угол MA: {ma_angle:+.1f}° | ADX: {adx:.1f} | ATR: ${atr:.2f}")
+        logger.info(f"  📊 MA: ${ma:.2f} | EMA: ${ema:.2f}")
