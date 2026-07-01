@@ -66,6 +66,10 @@ class AdvancedTrendSignalIndicator:
         """
         Определение направления и силы тренда с учетом ADX-фильтра флэта
         и фильтра расхождения MA/EMA (divergence_threshold).
+
+        Исправления:
+        - ADX порог снижен с 25 до 20 (ADX 20-25 — developing trend, не флэт)
+        - Направление определяется по максимальному углу (MA или EMA), а не по обоим сразу
         """
         trend_info = {
             'direction': 'neutral',
@@ -74,20 +78,34 @@ class AdvancedTrendSignalIndicator:
         }
 
         # --- ЗАЩИТА ОТ ФЛЭТА ---
-        # Если ADX ниже 25 — тренда на рынке нет, принудительно включаем режим флэта
-        if current_adx < 25.0:
+        # ADX ниже 20 — рынок во флэте, блокируем сигналы
+        if current_adx < 20.0:
             return trend_info
 
-        # Определение направления истинного тренда по углам
-        if ma_angle > self.config.angle_threshold_weak and ema_angle > self.config.angle_threshold_weak:
+        # Определяем доминирующий угол (максимальный по модулю)
+        abs_ma = abs(ma_angle)
+        abs_ema = abs(ema_angle)
+        max_abs_angle = max(abs_ma, abs_ema)
+
+        # Если ни один угол не превышает слабый порог — тренда нет
+        if max_abs_angle < self.config.angle_threshold_weak:
+            return trend_info
+
+        # Определяем направление по углу с большим абсолютным значением
+        if abs_ma >= abs_ema:
+            dominant_angle = ma_angle
+        else:
+            dominant_angle = ema_angle
+
+        if dominant_angle > self.config.angle_threshold_weak:
             trend_info['direction'] = 'up'
-        elif ma_angle < -self.config.angle_threshold_weak and ema_angle < -self.config.angle_threshold_weak:
+        elif dominant_angle < -self.config.angle_threshold_weak:
             trend_info['direction'] = 'down'
         else:
             return trend_info  # Спорные сигналы сбрасываем в нейтраль
 
         # Определение силы тренда (на основе углов, ADX и расхождения)
-        avg_angle_abs = (abs(ma_angle) + abs(ema_angle)) / 2
+        avg_angle_abs = (abs_ma + abs_ema) / 2
 
         # --- ФИЛЬТР ПО РАСХОЖДЕНИЮ MA/EMA ---
         # Если расхождение меньше порога — MA и EMA почти совпадают,
@@ -100,7 +118,7 @@ class AdvancedTrendSignalIndicator:
         if avg_angle_abs >= self.config.angle_threshold_strong and current_adx > 35.0:
             trend_info['strength'] = 'strong'
             trend_info['confidence'] = 0.9
-        elif avg_angle_abs >= self.config.angle_threshold_weak and current_adx >= 25.0:
+        elif avg_angle_abs >= self.config.angle_threshold_weak and current_adx >= 20.0:
             trend_info['strength'] = 'moderate'
             trend_info['confidence'] = 0.7
         else:
@@ -209,7 +227,7 @@ class AdvancedTrendSignalIndicator:
         Безопасный генератор торговых команд. Полностью исключает торговлю против тренда и "пилу".
         """
         if trend_info['direction'] == 'neutral':
-            return 'Sideways'  # Если ADX < 25 или тренд не сформирован — робот жестко сидит на заборе
+            return 'Sideways'  # Если ADX < 20 или тренд не сформирован — робот жестко сидит на заборе
 
         above_all = c > ma and o > ma
         below_all = c < ma and o < ma

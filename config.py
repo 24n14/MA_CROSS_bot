@@ -32,9 +32,9 @@ class Config:
                 ma_period=5,  # Короткая быстрая скользящая
                 ema_period=21,  # Экспоненциальная средняя для фильтрации шума
                 trend_lookback=14,  # Увеличен lookback для защиты от резких шпилек
-                angle_threshold_strong=25.0,  # Оптимизированные углы под ATR-регрессию
-                angle_threshold_weak=12.0,
-                divergence_threshold=0.1
+                angle_threshold_strong=12.0,  # Снижены пороги для захвата слабых трендов
+                angle_threshold_weak=5.0,
+                divergence_threshold=0.05  # Снижен порог расхождения MA/EMA
             )
 
         # Средние таймфреймы
@@ -43,9 +43,9 @@ class Config:
                 ma_period=10,
                 ema_period=50,
                 trend_lookback=14,
-                angle_threshold_strong=20.0,
-                angle_threshold_weak=10.0,
-                divergence_threshold=0.15
+                angle_threshold_strong=10.0,
+                angle_threshold_weak=5.0,
+                divergence_threshold=0.08
             )
 
         # Трендовый таймфрейм (основной рабочий)
@@ -54,9 +54,9 @@ class Config:
                 ma_period=20,
                 ema_period=100,
                 trend_lookback=20,
-                angle_threshold_strong=15.0,
-                angle_threshold_weak=5.0,
-                divergence_threshold=0.25
+                angle_threshold_strong=8.0,
+                angle_threshold_weak=3.0,
+                divergence_threshold=0.15
             )
 
         # Глобальные стратегические таймфреймы
@@ -65,9 +65,9 @@ class Config:
                 ma_period=50,
                 ema_period=200,
                 trend_lookback=30,
-                angle_threshold_strong=10.0,
-                angle_threshold_weak=3.0,
-                divergence_threshold=0.35
+                angle_threshold_strong=5.0,
+                angle_threshold_weak=2.0,
+                divergence_threshold=0.2
             )
         else:
             return cls()
