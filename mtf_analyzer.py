@@ -201,4 +201,4 @@ class MultiTimeframeAnalyzer:
         if final['trigger_trade']:
             logger.info(f" 🔥 [ВХОД РАЗРЕШЕН] Открывать позицию {final['direction']} с полным АТР риск-профилем.")
         else:
-            logger.info(" 🛑 [ТОРГ БЛОКИРОВАН] Нет консенсуса или флэт. Ожидание.")
+            logger.info("🛑[ТОРГ БЛОК] Нет консенсуса или флэт. Ожидание.")
