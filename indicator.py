@@ -20,6 +20,17 @@ class AdvancedTrendSignalIndicator:
     и защитой от ложных сигналов во флэте (через ADX).
     """
 
+    # Маппинг Trend_State в короткие значения
+    _TREND_STATE_MAP = {
+        ('up', 'weak'): 'UP',
+        ('up', 'moderate'): 'UP',
+        ('up', 'strong'): 'UP',
+        ('down', 'weak'): 'DOWN',
+        ('down', 'moderate'): 'DOWN',
+        ('down', 'strong'): 'DOWN',
+        ('neutral', 'none'): 'NO_TREND',
+    }
+
     def __init__(self, config: Config = Config()):
         """
         Инициализация индикатора.
@@ -169,7 +180,7 @@ class AdvancedTrendSignalIndicator:
             if pd.isna(current_ma) or pd.isna(current_ema) or pd.isna(current_adx):
                 signals.append('Нет данных')
                 signal_strengths.append(0)
-                trend_states.append('neutral_none')
+                trend_states.append('NO_TREND')
                 raw_directions.append('neutral')  # НОВОЕ
                 raw_strengths.append(0)  # НОВОЕ
                 continue
@@ -205,7 +216,13 @@ class AdvancedTrendSignalIndicator:
 
             signals.append(signal)
             signal_strengths.append(signal_strength)
-            trend_states.append(f"{trend_info['direction']}_{trend_info['strength']}")
+            # Короткое значение Trend_State: UP / DOWN / NO_TREND
+            trend_states.append(
+                self._TREND_STATE_MAP.get(
+                    (trend_info['direction'], trend_info['strength']),
+                    'NO_TREND'
+                )
+            )
 
         df['Signal'] = signals
         df['Signal_Strength'] = signal_strengths
@@ -217,7 +234,7 @@ class AdvancedTrendSignalIndicator:
         df['Raw_Signal'] = raw_strengths
 
         df['Trend_Confidence'] = df['Trend_State'].apply(
-            lambda x: 0.9 if 'strong' in str(x) else (0.7 if 'moderate' in str(x) else 0.3)
+            lambda x: 0.7 if x in ('UP', 'DOWN') else 0.3
         )
         return df
 
