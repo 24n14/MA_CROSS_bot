@@ -169,8 +169,8 @@ class AdvancedTrendSignalIndicator:
         signals = []
         signal_strengths = []
         trend_states = []
-        raw_directions = []  # НОВОЕ: реальное направление без фильтрации
-        raw_strengths = []  # НОВОЕ: реальная сила без фильтрации
+        raw_directions = []
+        raw_strengths = []
 
         for i in range(len(df)):
             current_ma = df['MA'].iloc[i]
@@ -181,8 +181,8 @@ class AdvancedTrendSignalIndicator:
                 signals.append('Нет данных')
                 signal_strengths.append(0)
                 trend_states.append('NO_TREND')
-                raw_directions.append('neutral')  # НОВОЕ
-                raw_strengths.append(0)  # НОВОЕ
+                raw_directions.append('neutral')
+                raw_strengths.append(0)
                 continue
 
             current_close = df['close'].iloc[i]
@@ -198,8 +198,7 @@ class AdvancedTrendSignalIndicator:
                 current_adx=current_adx
             )
 
-            # === НОВОЕ: Сохраняем "сырые" значения ДО фильтрации ===
-            raw_direction = trend_info['direction']  # 'up', 'down' или 'neutral'
+            raw_direction = trend_info['direction']
             raw_strength = self._calculate_signal_strength(trend_info, is_bullish, is_bearish)
 
             raw_directions.append(raw_direction)
@@ -229,7 +228,6 @@ class AdvancedTrendSignalIndicator:
         df['Trend_State'] = trend_states
         df['MA_Angle_Final'] = df['MA_Angle']
 
-        # === НОВОЕ: Добавляем сырые колонки ===
         df['Raw_Direction'] = raw_directions
         df['Raw_Signal'] = raw_strengths
 
