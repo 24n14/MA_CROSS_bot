@@ -29,7 +29,7 @@ class Config:
         # Младшие таймфреймы (скальпинг/интрадей шумы)
         if timeframe in ['1m', '5m', '15m']:
             return cls(
-                ma_period=5,  # Короткая быстрая скользящая
+                ma_period=9,  # Короткая быстрая скользящая
                 ema_period=21,  # Экспоненциальная средняя для фильтрации шума
                 trend_lookback=14,  # Увеличен lookback для защиты от резких шпилек
                 angle_threshold_strong=12.0,  # Снижены пороги для захвата слабых трендов
@@ -40,8 +40,8 @@ class Config:
         # Средние таймфреймы
         elif timeframe in ['30m', '1h']:
             return cls(
-                ma_period=10,
-                ema_period=50,
+                ma_period=11,
+                ema_period=31,
                 trend_lookback=14,
                 angle_threshold_strong=10.0,
                 angle_threshold_weak=5.0,
@@ -51,8 +51,8 @@ class Config:
         # Трендовый таймфрейм (основной рабочий)
         elif timeframe in ['4h']:
             return cls(
-                ma_period=20,
-                ema_period=100,
+                ma_period=21,
+                ema_period=49,
                 trend_lookback=20,
                 angle_threshold_strong=8.0,
                 angle_threshold_weak=3.0,
@@ -62,8 +62,8 @@ class Config:
         # Глобальные стратегические таймфреймы
         elif timeframe in ['1d', '1w']:
             return cls(
-                ma_period=50,
-                ema_period=200,
+                ma_period=31,
+                ema_period=100,
                 trend_lookback=30,
                 angle_threshold_strong=5.0,
                 angle_threshold_weak=2.0,
