@@ -24,7 +24,7 @@ class MultiTimeframeAnalyzer:
     """
     # Математические веса таймфреймов (младшие не могут перевесить старшую структуру)
     TF_WEIGHTS = {
-        '1m': 0.05, '5m': 0.10, '15m': 0.15,
+        '1m': 0.05, '5m': 0.20, '15m': 0.20,
         '30m': 0.20, '1h': 0.35, '4h': 0.60,
         '1d': 0.85, '1w': 1.00
     }
@@ -57,9 +57,9 @@ class MultiTimeframeAnalyzer:
         Returns:
             Словарь с результатами анализа
         """
-        logger.info(f"\n{'=' * 60}")
+        logger.info(f"\n{'=' * 30}")
         logger.info(f" 📊 MTF АНАЛИЗ (КОНСЕНСУС): {self.symbol}")
-        logger.info(f"{'=' * 60}")
+        logger.info(f"{'=' * 30}")
 
         # Инкрементальная загрузка — догружаем только новые свечи
         data = self.loader.load_multiple_timeframes_incremental(
@@ -205,14 +205,14 @@ class MultiTimeframeAnalyzer:
         details = analysis['mtf_details']
 
         logger.info(f"\n{'ТФ':>33} | {'Цена':>7} | {'Сигнал':} | {'Сила':} | {'Тренд':>5} | {'Вес':}")
-        logger.info("-" * 75)
+        logger.info("-" * 30)
         for item in details:
             logger.info(
                 f"{item['timeframe']:} | ${item['close']:.2f} | {item['signal']:} | {item['strength']:.1f} | {item['trend']:} | {item['weight']:.2f}")
 
-        logger.info(f"\n{'=' * 60}")
+        logger.info(f"\n{'=' * 30}")
         logger.debug(f" 🎯 МАТЕМАТИЧЕСКИЙ СИНТЕЗ СИСТЕМЫ")
-        logger.debug(f"{'=' * 60}")
+        logger.debug(f"{'=' * 30}")
 
         emoji = '🟢' if final['direction'] == 'BULLISH' else ('🔴' if final['direction'] == 'BEARISH' else '⚪')
         logger.debug(f"Направление: {emoji} {final['direction']}")

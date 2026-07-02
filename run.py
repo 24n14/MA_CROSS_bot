@@ -90,9 +90,9 @@ def print_mtf_result(mtf_data: Dict, analysis_config: AnalysisConfig):
     final = analysis['final_signal']
     details = analysis['mtf_details']
 
-    logger.info(f"\n{'=' * 60}")
+    logger.info(f"\n{'=' * 30}")
     logger.info(f"📊 МТФ АНАЛИЗ: {analysis_config.symbol}")
-    logger.info(f"{'=' * 60}")
+    logger.info(f"{'=' * 30}")
 
     emoji = '🟢' if final['direction'] == 'BULLISH' else '🔴' if final['direction'] == 'BEARISH' else '⚪'
     logger.info(f"{emoji} Направление: {final['direction']}")
@@ -100,9 +100,9 @@ def print_mtf_result(mtf_data: Dict, analysis_config: AnalysisConfig):
     logger.info(f"🎯 Уверенность: {final['confidence']}")
     logger.info(f"📊 Согласие ТФ: {final['agreement']}%")
 
-    logger.info(f"\n{'─' * 50}")
+    logger.info(f"\n{'─' * 30}")
     logger.info(f"{'Таймфрейм':} {'Сигнал':} {'Цена':}")
-    logger.info(f"{'─' * 50}")
+    logger.info(f"{'─' * 30}")
 
     for item in details:
         tf = item['timeframe']
