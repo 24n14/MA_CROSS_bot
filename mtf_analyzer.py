@@ -211,15 +211,15 @@ class MultiTimeframeAnalyzer:
                 f"{item['timeframe']:} | ${item['close']:.2f} | {item['signal']:} | {item['strength']:.1f} | {item['trend']:} | {item['weight']:.2f}")
 
         logger.info(f"\n{'=' * 60}")
-        logger.info(f" 🎯 МАТЕМАТИЧЕСКИЙ СИНТЕЗ СИСТЕМЫ")
-        logger.info(f"{'=' * 60}")
+        logger.debug(f" 🎯 МАТЕМАТИЧЕСКИЙ СИНТЕЗ СИСТЕМЫ")
+        logger.debug(f"{'=' * 60}")
 
         emoji = '🟢' if final['direction'] == 'BULLISH' else ('🔴' if final['direction'] == 'BEARISH' else '⚪')
-        logger.info(f"Направление: {emoji} {final['direction']}")
-        logger.info(f"Уверенность (Согласие): {final['confidence']} ({final['agreement']}%)")
-        logger.info(f"Взвешенная Сила:  {final['strength']} / 100")
-        logger.info(f"\n 💡 ПРИКАЗ ДЛЯ ИСПОЛНИТЕЛЬНОГО МОДУЛЯ:")
+        logger.debug(f"Направление: {emoji} {final['direction']}")
+        logger.debug(f"Уверенность (Согласие): {final['confidence']} ({final['agreement']}%)")
+        logger.debug(f"Взвешенная Сила:  {final['strength']} / 100")
+        logger.debug(f"\n 💡 ПРИКАЗ ДЛЯ ИСПОЛНИТЕЛЬНОГО МОДУЛЯ:")
         if final['trigger_trade']:
-            logger.info(f" 🔥 [ВХОД РАЗРЕШЕН] Открывать позицию {final['direction']} с полным АТР риск-профилем.")
+            logger.warning(f" 🔥 [ВХОД РАЗРЕШЕН] Открывать позицию {final['direction']} с полным АТР риск-профилем.")
         else:
             logger.info("🛑[ТОРГ БЛОК] Нет консенсуса или флэт. Ожидание.")

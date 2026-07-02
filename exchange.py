@@ -61,7 +61,7 @@ class ExchangeDataLoader:
             if since:
                 since_ts = int(datetime.strptime(since, '%Y-%m-%d').timestamp() * 1000)
 
-            logger.info(f"Загрузка данных {symbol} ({timeframe}) с {self.exchange.name}...")
+            logger.debug(f"Загрузка данных {symbol} ({timeframe}) с {self.exchange.name}...")
             ohlcv = self.exchange.fetch_ohlcv(
                 symbol, timeframe=timeframe, limit=limit, since=since_ts
             )
@@ -74,8 +74,8 @@ class ExchangeDataLoader:
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)
 
-            logger.info(f"Загружено {len(df)} свечей")
-            logger.info(f"Период: с {df.index[0]} по {df.index[-1]}")
+            logger.debug(f"Загружено {len(df)} свечей")
+            logger.debug(f"Период: с {df.index[0]} по {df.index[-1]}")
 
             return df
 
@@ -127,7 +127,7 @@ class ExchangeDataLoader:
             if len(df) == 0:
                 return None
 
-            logger.info(f"Загружено {len(df)} новых свечей {symbol} ({timeframe})")
+            logger.debug(f"Загружено {len(df)} новых свечей {symbol} ({timeframe})")
             return df
 
         except Exception as e:
@@ -190,13 +190,13 @@ class ExchangeDataLoader:
                     combined = combined[~combined.index.duplicated(keep='first')]
                     # Оставляем только последние limit свечей
                     data[tf] = combined.iloc[-limit:]
-                    logger.info(f"📈 {tf}: было {len(data[tf]) - len(new_df)} свечей, "
+                    logger.debug(f"📈 {tf}: было {len(data[tf]) - len(new_df)} свечей, "
                                  f"добавлено {len(new_df)}, всего {len(data[tf])}")
                 else:
                     logger.info(f"⏸️ {tf}: новых свечей нет")
             else:
                 # Первичная загрузка — все 300 свечей
-                logger.info(f"🆕 {tf}: первичная загрузка {limit} свечей")
+                logger.debug(f"🆕 {tf}: первичная загрузка {limit} свечей")
                 df = self.fetch_ohlcv(symbol, tf, limit)
                 if df is not None:
                     data[tf] = df

@@ -67,7 +67,7 @@ def run_mtf_analysis(analysis_config: AnalysisConfig,
             filename = f"MTF_{safe_symbol}_{tf}_signals.csv"
             output_file = os.path.join(CSV_DIR, filename)
             result.to_csv(output_file)
-            logger.info(f"💾 Сохранено: {output_file}")
+            logger.debug(f"💾 Сохранено: {output_file}")
 
     return {
         'analyzer': mtf,
