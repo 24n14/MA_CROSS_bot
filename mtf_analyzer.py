@@ -2,6 +2,7 @@
 Оптимизированный модуль мультитаймфреймового анализа с взвешенным консенсусом
 и защитой от рассинхронизации трендов.
 """
+import pandas as pd
 from typing import Dict, List, Optional
 from datetime import datetime
 from config import Config
