@@ -4,7 +4,22 @@
 - Config: параметры технического индикатора
 - AnalysisConfig: настройка режимов работы и управление рисками
 """
+import os
+from dotenv import load_dotenv
 from dataclasses import dataclass
+
+load_dotenv()
+# proxy
+USE_PROXY = False  # False - отключено, True - включено
+PROXY_USER = os.getenv("PROXY_USER", "")
+PROXY_PASS = os.getenv("PROXY_PASS", "")
+PROXY_HOST = os.getenv("PROXY_HOST", "")
+PROXY_PORT = os.getenv("PROXY_PORT", "")
+
+# bybit keys
+API_KEY = os.getenv("API_KEY", "")
+SECRET_KEY = os.getenv("SECRET_KEY", "")
+DEMO_TRADING = True
 
 
 @dataclass
@@ -78,8 +93,8 @@ class AnalysisConfig:
     """
     Конфигурация режимов анализа и централизованного риск-менеджмента.
     """
-    symbol: str = 'BTC/USDT'
-    exchange: str = 'binance'
+    symbol: str = "BTC/USDT:USDT"
+    exchange: str = 'bybit'
     limit: int = 300
 
     mtf_timeframes: tuple = ('5m', '15m', '1h')
@@ -90,3 +105,24 @@ class AnalysisConfig:
     # --- ИНТЕГРАЦИЯ ДИНАМИЧЕСКОГО РИСК-МЕНЕДЖМЕНТА ---
     atr_multiplier: float = 2.0  # Множитель волатильности для динамического Stop Loss
     risk_reward_ratio: float = 2.0  # Математическое соотношение Risk/Reward (1:2) для Take Profit
+
+
+# Добавить в конфигурацию:
+
+@dataclass
+class RiskConfig:
+    """
+    Конфигурация риск-менеджмента.
+    """
+    risk_percent: float = 2.0  # Процент риска на сделку
+    base_sl_multiplier: float = 1.5  # Базовый множитель стоп-лосса
+    base_tp_multiplier: float = 1.5  # Базовый множитель тейк-профита
+    atr_high_volatility_threshold: float = 400.0  # Порог высокой волатильности
+    high_vol_sl_multiplier: float = 2.0  # Множитель стопа при высокой волатильности
+
+    # Пороги ADX для множителей TP
+    adx_moderate_threshold: float = 25.0
+    adx_strong_threshold: float = 35.0
+    tp_multiplier_weak: float = 1.5
+    tp_multiplier_moderate: float = 2.0
+    tp_multiplier_strong: float = 3.0

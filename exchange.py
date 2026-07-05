@@ -1,5 +1,5 @@
 """
-Модуль загрузки данных с бирж.
+Модуль загрузки данных с бирж и торговли.
 
 Содержит класс:
 - ExchangeDataLoader: загрузчик OHLCV данных
@@ -8,35 +8,66 @@
 import pandas as pd
 import ccxt
 import time
-from typing import Dict, Optional
+import requests
+from typing import Dict, Optional  # Tuple
 from datetime import datetime
 from log import logger
+import config
+from risk_manager import DynamicRiskManager
 
 
 class ExchangeDataLoader:
-    """
-    Загрузчик данных с бирж через CCXT.
-
-    Поддерживает все биржи доступные в CCXT (Binance, Bybit, Kraken и др.)
-
-    Examples:
-        >>> loader = ExchangeDataLoader('binance')
-        >>> df = loader.fetch_ohlcv('BTC/USDT', '4h', 500)
-    """
-
-    def __init__(self, exchange_name: str = 'binance'):
+    def __init__(self, exchange_name: str = 'bybit', symbol: str = None):
         """
-        Инициализация загрузчика.
+        Инициализация загрузчика данных.
 
         Args:
-            exchange_name: название биржи ('binance', 'bybit', 'kraken', и т.д.)
+            exchange_name: название биржи (bybit, binance и т.д.)
+            symbol: торговая пара по умолчанию (опционально)
         """
+        self.symbol = symbol  # Сохраняем символ для использования в методах
+
+        # ============= ПРОКСИ =============
+        proxies = None
+        if config.USE_PROXY:
+            proxy_url = f"http://{config.PROXY_USER}:{config.PROXY_PASS}@{config.PROXY_HOST}:{config.PROXY_PORT}"
+            proxies = {'http': proxy_url, 'https': proxy_url}
+
+            try:
+                test_ip = requests.get('https://api.ipify.org', proxies=proxies, timeout=10).text
+                logger.info(f"✅ Внешний IP через прокси: {test_ip}")
+            except Exception as e:
+                logger.error(f"❌ Не удалось проверить IP через прокси: {e}")
+        else:
+            logger.info("⏭️ Прокси отключён")
+
+        # ============= БИРЖА =============
         self.exchange = getattr(ccxt, exchange_name)({
+            'apiKey': config.API_KEY,
+            'secret': config.SECRET_KEY,
+            'proxies': proxies,  # Если None — без прокси
             'enableRateLimit': True,
             'options': {
-                'defaultType': 'spot',
+                'enableDemoTrading': config.DEMO_TRADING,
+                'defaultType': 'linear',
+                'adjustForTimeDifference': True,
+                'recvWindow': 10000
             }
         })
+
+        if config.DEMO_TRADING:
+            self.exchange.urls['api'] = self.exchange.urls['demotrading']
+            result = self.exchange.privateGetV5UserQueryApi()
+            uid = result['result']['userID']
+            logger.info(f"🧪 ДЕМО-РЕЖИМ АКТИВИРОВАН UID {uid}")
+        else:
+            result = self.exchange.privateGetV5UserQueryApi()
+            uid = result['result']['userID']
+            logger.info(f"⚠️ РЕАЛЬНАЯ ТОРГОВЛЯ! UID {uid}")
+
+        balance = self.exchange.fetch_balance()
+        usdt_balance = balance.get('USDT', {}).get('free', 0)
+        logger.info(f"✅ АВТОРИЗАЦИЯ УСПЕШНА! 💰 Баланс: {usdt_balance} USDT")
 
     def fetch_ohlcv(self,
                     symbol: str,
@@ -204,3 +235,106 @@ class ExchangeDataLoader:
             time.sleep(1)
 
         return data
+
+    def execute_trade_signal(
+            self,
+            signal_data: Dict,
+            risk_percent: float = 2.0
+    ) -> Optional[Dict]:
+        """
+        Исполнение торгового сигнала с динамическим SL/TP.
+
+        Args:
+            signal_data: данные сигнала (должны содержать direction, strength,
+                        atr, adx, close и др.)
+            risk_percent: процент риска на сделку
+
+        Returns:
+            Dict с информацией об ордере или None
+        """
+        if not signal_data:
+            return None
+
+        direction = signal_data.get('direction', 'NEUTRAL')
+        if direction == 'NEUTRAL':
+            logger.info("⏭️ Нейтральный сигнал - пропускаем")
+            return None
+
+        # Проверка силы сигнала
+        strength = signal_data.get('strength', 0)
+        if strength < 30:
+            logger.info(f"⏭️ Слабый сигнал (сила={strength}) - пропускаем")
+            return None
+
+        # Получаем данные для расчета
+        atr = signal_data.get('atr', 0)
+        adx = signal_data.get('adx', 0)
+        close_price = signal_data.get('close', 0)
+        trigger_trade = signal_data.get('trigger_trade', False)
+
+        if not trigger_trade:
+            logger.info("⏭️ Сигнал не разрешает торговлю - пропускаем")
+            return None
+
+        if atr <= 0 or adx <= 0:
+            logger.error(f"❌ Некорректные ATR({atr}) или ADX({adx})")
+            return None
+
+        # Определяем символ для торговли
+        # Используем переданный в signal_data, иначе self.symbol, иначе стандартный
+        trade_symbol = signal_data.get('symbol', self.symbol)
+        if not trade_symbol:
+            logger.error("❌ Не указан символ для торговли")
+            return None
+
+        # Создаем менеджер риска
+        risk_manager = DynamicRiskManager(self.exchange, trade_symbol)
+
+        # Рассчитываем SL/TP
+        side = 'buy' if direction == 'BULLISH' else 'sell'
+        sl_price, tp_price = risk_manager.calculate_sl_tp(
+            entry_price=close_price,
+            atr=atr,
+            adx=adx,
+            side='long' if direction == 'BULLISH' else 'short'
+        )
+
+        # Рассчитываем размер позиции
+        try:
+            balance = self.exchange.fetch_balance()
+            usdt_balance = balance.get('USDT', {}).get('free', 0)
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения баланса: {e}")
+            usdt_balance = 0
+
+        if usdt_balance <= 0:
+            logger.error(f"❌ Недостаточно средств на балансе: ${usdt_balance}")
+            return None
+
+        # SL в процентах для расчета размера
+        sl_percent = abs(close_price - sl_price) / close_price * 100
+        position_size = risk_manager.calculate_position_size(
+            account_balance=usdt_balance,
+            risk_percent=risk_percent,
+            stop_loss_percent=sl_percent
+        )
+
+        # Размещаем ордер
+        logger.info(f"\n{'=' * 30}")
+        logger.info(f"🔥 ИСПОЛНЕНИЕ СИГНАЛА: {direction}")
+        logger.info(f"💰 Баланс: ${usdt_balance:.2f}")
+        logger.info(f"💰 Риск: {risk_percent}% = ${usdt_balance * risk_percent / 100:.2f}")
+        logger.info(f"📊 Цена входа: ${close_price:.2f}")
+        logger.info(f"📊 Размер: {position_size:.4f}")
+        logger.info(f"📊 SL: ${sl_price:.2f} | TP: ${tp_price:.2f}")
+        logger.info(f"{'=' * 30}")
+
+        result = risk_manager.place_limit_order(
+            side=side,
+            amount=position_size,
+            price=close_price,
+            stop_loss_price=sl_price,
+            take_profit_price=tp_price
+        )
+
+        return result

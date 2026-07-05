@@ -31,14 +31,14 @@ class MultiTimeframeAnalyzer:
 
     def __init__(self,
                  timeframes: List[str] = None,
-                 exchange_name: str = 'binance',
+                 exchange_name: str = 'bybit',
                  symbol: str = 'BTC/USDT'):
         """
         Инициализация MTF анализатора.
         """
         self.timeframes = timeframes or ['1h', '4h', '1d']
         self.symbol = symbol
-        self.loader = ExchangeDataLoader(exchange_name)
+        self.loader = ExchangeDataLoader(exchange_name, symbol=symbol)
         self.indicators = {
             tf: AdvancedTrendSignalIndicator(Config.for_timeframe(tf))
             for tf in self.timeframes
@@ -99,7 +99,9 @@ class MultiTimeframeAnalyzer:
                 'angle': last['MA_Angle_Final'],
                 'divergence': last['Divergence'],
                 'close': last['close'],
-                'weight': weight
+                'weight': weight,
+                'atr': last.get('ATR', 0),
+                'adx': last.get('ADX', 0)
             })
 
         # Вычисление финального математического консенсуса
@@ -118,9 +120,18 @@ class MultiTimeframeAnalyzer:
         """
         МАТЕМАТИЧЕСКИЙ СКОРИНГ КОНСЕНСУСА.
         Исключает ложные входы по простому арифметическому большинству мелких ТФ.
+        Возвращает также ATR и ADX для расчета динамических SL/TP.
         """
         if not summary:
-            return {'direction': 'NEUTRAL', 'confidence': 'LOW', 'strength': 0, 'trigger_trade': False}
+            return {
+                'direction': 'NEUTRAL',
+                'confidence': 'LOW',
+                'strength': 0,
+                'trigger_trade': False,
+                'atr': 0,
+                'adx': 0,
+                'close': 0
+            }
 
         total_weight = sum(item['weight'] for item in summary)
 
@@ -185,13 +196,47 @@ class MultiTimeframeAnalyzer:
             if abs(final_strength) >= 40.0:  # Защита от вялых движений
                 trigger_trade = True
 
+        # --- РАСЧЕТ ATR И ADX ДЛЯ ДИНАМИЧЕСКИХ SL/TP ---
+        # Берем данные со старшего (самого весомого) таймфрейма
+        # Если нет прямых данных ATR/ADX в summary - рассчитываем средневзвешенные
+
+        # Проверяем, есть ли ATR и ADX в summary (добавлены из индикатора)
+        has_atr_adx = all('atr' in item and 'adx' in item for item in summary)
+
+        if has_atr_adx:
+            # Средневзвешенные ATR и ADX по всем таймфреймам
+            weighted_atr = sum(item['atr'] * item['weight'] for item in summary) / total_weight
+            weighted_adx = sum(item['adx'] * item['weight'] for item in summary) / total_weight
+
+            # Также берем значения со старшего таймфрейма (приоритет)
+            senior_atr = senior_tf.get('atr', weighted_atr)
+            senior_adx = senior_tf.get('adx', weighted_adx)
+
+            # Используем значения со старшего таймфрейма для более консервативного расчета
+            final_atr = senior_atr  # Старший ТФ важнее для расчета дистанции стопа
+            final_adx = senior_adx  # Старший ТФ показывает глобальный тренд
+        else:
+            # Если данных нет - используем последнюю цену закрытия для приблизительного ATR
+            # (запасной вариант, если индикатор не отдает ATR/ADX)
+            last_close = senior_tf.get('close', 0)
+            final_atr = last_close * 0.01  # Примерно 1% от цены как ATR
+            final_adx = 25.0  # Умеренное значение ADX по умолчанию
+            logger.warning("⚠️ ATR/ADX не найдены в данных, использую запасные значения")
+
+        # Получаем цену закрытия со старшего таймфрейма
+        final_close = senior_tf.get('close', 0)
+
         return {
             'direction': direction,
             'confidence': confidence,
             'strength': round(final_strength, 1),
             'agreement': round(agreement_pct, 1),
             'trigger_trade': trigger_trade,
-            'total_timeframes': len(summary)
+            'total_timeframes': len(summary),
+            # Данные для динамических SL/TP
+            'atr': round(final_atr, 2),
+            'adx': round(final_adx, 1),
+            'close': round(final_close, 2)
         }
 
     def print_analysis(self, analysis: Dict):
