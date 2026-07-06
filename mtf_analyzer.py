@@ -32,11 +32,11 @@ class MultiTimeframeAnalyzer:
     def __init__(self,
                  timeframes: List[str] = None,
                  exchange_name: str = 'bybit',
-                 symbol: str = 'BTC/USDT'):
+                 symbol: str = 'BTC/USDT:USDT'):
         """
         Инициализация MTF анализатора.
         """
-        self.timeframes = timeframes or ['1h', '4h', '1d']
+        self.timeframes = timeframes or ['5m', '15', '30m']
         self.symbol = symbol
         self.loader = ExchangeDataLoader(exchange_name, symbol=symbol)
         self.indicators = {

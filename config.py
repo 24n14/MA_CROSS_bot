@@ -97,7 +97,7 @@ class AnalysisConfig:
     exchange: str = 'bybit'
     limit: int = 300
 
-    mtf_timeframes: tuple = ('5m', '15m', '1h')
+    mtf_timeframes: tuple = ('5m', '5m', '15m')
 
     save_csv: bool = True
     verbose: bool = True
