@@ -5,7 +5,7 @@
 import pandas as pd
 from typing import Dict, List, Optional
 from datetime import datetime
-from config import Config
+from config import Config, AnalysisConfig, TF_WEIGHTS
 from exchange import ExchangeDataLoader
 from indicator import AdvancedTrendSignalIndicator
 from log import logger
@@ -22,12 +22,8 @@ class MultiTimeframeAnalyzer:
     - В последующих циклах догружает только новые закрытые свечи
     - Хранит кеш DataFrame'ов в self._cached_data
     """
-    # Математические веса таймфреймов (младшие не могут перевесить старшую структуру)
-    TF_WEIGHTS = {
-        '1m': 0.05, '5m': 0.20, '15m': 0.20,
-        '30m': 0.20, '1h': 0.35, '4h': 0.60,
-        '1d': 0.85, '1w': 1.00
-    }
+    # Веса таймфреймов берутся из config.TF_WEIGHTS
+    TF_WEIGHTS = TF_WEIGHTS
 
     def __init__(self,
                  timeframes: List[str] = None,
@@ -121,7 +117,12 @@ class MultiTimeframeAnalyzer:
         МАТЕМАТИЧЕСКИЙ СКОРИНГ КОНСЕНСУСА.
         Исключает ложные входы по простому арифметическому большинству мелких ТФ.
         Возвращает также ATR и ADX для расчета динамических SL/TP.
+
+        Пороги уверенности и минимальная сила берутся из config.AnalysisConfig.
         """
+        # Загружаем пороги из конфигурации
+        ac = AnalysisConfig()
+
         if not summary:
             return {
                 'direction': 'NEUTRAL',
@@ -180,50 +181,40 @@ class MultiTimeframeAnalyzer:
             direction = 'NEUTRAL'
             agreement_pct = 50.0
 
-        # Градация уверенности на основе % взвешенного согласия
-        if agreement_pct >= 75.0:
+        # Градация уверенности на основе % взвешенного согласия (из config)
+        if agreement_pct >= ac.confidence_very_high:
             confidence = 'VERY HIGH'
-        elif agreement_pct >= 60.0:
+        elif agreement_pct >= ac.confidence_high:
             confidence = 'HIGH'
-        elif agreement_pct >= 45.0:
+        elif agreement_pct >= ac.confidence_moderate:
             confidence = 'MODERATE'
         else:
             confidence = 'LOW'
 
-        # Разрешение на открытие рыночного ордера (Сигнал должен быть четким и сильным)
+        # Разрешение на открытие рыночного ордера (из config)
         trigger_trade = False
         if direction != 'NEUTRAL' and confidence in ['HIGH', 'VERY HIGH']:
-            if abs(final_strength) >= 40.0:  # Защита от вялых движений
+            if abs(final_strength) >= ac.min_strength_for_trade:
                 trigger_trade = True
 
         # --- РАСЧЕТ ATR И ADX ДЛЯ ДИНАМИЧЕСКИХ SL/TP ---
-        # Берем данные со старшего (самого весомого) таймфрейма
-        # Если нет прямых данных ATR/ADX в summary - рассчитываем средневзвешенные
-
-        # Проверяем, есть ли ATR и ADX в summary (добавлены из индикатора)
         has_atr_adx = all('atr' in item and 'adx' in item for item in summary)
 
         if has_atr_adx:
-            # Средневзвешенные ATR и ADX по всем таймфреймам
             weighted_atr = sum(item['atr'] * item['weight'] for item in summary) / total_weight
             weighted_adx = sum(item['adx'] * item['weight'] for item in summary) / total_weight
 
-            # Также берем значения со старшего таймфрейма (приоритет)
             senior_atr = senior_tf.get('atr', weighted_atr)
             senior_adx = senior_tf.get('adx', weighted_adx)
 
-            # Используем значения со старшего таймфрейма для более консервативного расчета
-            final_atr = senior_atr  # Старший ТФ важнее для расчета дистанции стопа
-            final_adx = senior_adx  # Старший ТФ показывает глобальный тренд
+            final_atr = senior_atr
+            final_adx = senior_adx
         else:
-            # Если данных нет - используем последнюю цену закрытия для приблизительного ATR
-            # (запасной вариант, если индикатор не отдает ATR/ADX)
             last_close = senior_tf.get('close', 0)
-            final_atr = last_close * 0.01  # Примерно 1% от цены как ATR
-            final_adx = 25.0  # Умеренное значение ADX по умолчанию
+            final_atr = last_close * 0.01
+            final_adx = 25.0
             logger.warning("⚠️ ATR/ADX не найдены в данных, использую запасные значения")
 
-        # Получаем цену закрытия со старшего таймфрейма
         final_close = senior_tf.get('close', 0)
 
         return {
@@ -233,7 +224,6 @@ class MultiTimeframeAnalyzer:
             'agreement': round(agreement_pct, 1),
             'trigger_trade': trigger_trade,
             'total_timeframes': len(summary),
-            # Данные для динамических SL/TP
             'atr': round(final_atr, 2),
             'adx': round(final_adx, 1),
             'close': round(final_close, 2)

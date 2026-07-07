@@ -260,10 +260,11 @@ class ExchangeDataLoader:
             logger.info("⏭️ Нейтральный сигнал - пропускаем")
             return None
 
-        # Проверка силы сигнала
+        # Проверка силы сигнала (порог из config.AnalysisConfig)
+        min_strength = config.AnalysisConfig().min_signal_strength
         strength = signal_data.get('strength', 0)
-        if strength < 30:
-            logger.info(f"⏭️ Слабый сигнал (сила={strength}) - пропускаем")
+        if strength < min_strength:
+            logger.info(f"⏭️ Слабый сигнал (сила={strength} < {min_strength}) - пропускаем")
             return None
 
         # Получаем данные для расчета

@@ -18,6 +18,8 @@ class AdvancedTrendSignalIndicator:
     """
     Индикатор с анализом тренда по N-свечам, динамическим ATR-фильтром волатильности
     и защитой от ложных сигналов во флэте (через ADX).
+
+    Порог ADX для блокировки флэта берётся из Config.adx_flat_threshold.
     """
 
     # Маппинг Trend_State в короткие значения
@@ -78,9 +80,7 @@ class AdvancedTrendSignalIndicator:
         Определение направления и силы тренда с учетом ADX-фильтра флэта
         и фильтра расхождения MA/EMA (divergence_threshold).
 
-        Исправления:
-        - ADX порог снижен с 25 до 20 (ADX 20-25 — developing trend, не флэт)
-        - Направление определяется по максимальному углу (MA или EMA), а не по обоим сразу
+        Порог ADX для блокировки флэта берётся из config.adx_flat_threshold.
         """
         trend_info = {
             'direction': 'neutral',
@@ -89,8 +89,8 @@ class AdvancedTrendSignalIndicator:
         }
 
         # --- ЗАЩИТА ОТ ФЛЭТА ---
-        # ADX ниже 20 — рынок во флэте, блокируем сигналы
-        if current_adx < 20.0:
+        # ADX ниже порога (из config) — рынок во флэте, блокируем сигналы
+        if current_adx < self.config.adx_flat_threshold:
             return trend_info
 
         # Определяем доминирующий угол (максимальный по модулю)
@@ -129,7 +129,7 @@ class AdvancedTrendSignalIndicator:
         if avg_angle_abs >= self.config.angle_threshold_strong and current_adx > 35.0:
             trend_info['strength'] = 'strong'
             trend_info['confidence'] = 0.9
-        elif avg_angle_abs >= self.config.angle_threshold_weak and current_adx >= 20.0:
+        elif avg_angle_abs >= self.config.angle_threshold_weak and current_adx >= self.config.adx_flat_threshold:
             trend_info['strength'] = 'moderate'
             trend_info['confidence'] = 0.7
         else:
@@ -242,7 +242,7 @@ class AdvancedTrendSignalIndicator:
         Безопасный генератор торговых команд. Полностью исключает торговлю против тренда и "пилу".
         """
         if trend_info['direction'] == 'neutral':
-            return 'Sideways'  # Если ADX < 20 или тренд не сформирован — робот жестко сидит на заборе
+            return 'Sideways'  # Если ADX < порога или тренд не сформирован — робот жестко сидит на заборе
 
         above_all = c > ma and o > ma
         below_all = c < ma and o < ma

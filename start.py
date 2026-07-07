@@ -17,16 +17,16 @@ def main():
 
     SYMBOL = cfg.symbol
     MTF_TIMEFRAMES = list(cfg.mtf_timeframes)
-    SLEEP_SECONDS = 300  # 5 минут между циклами
+    SLEEP_SECONDS = cfg.sleep_seconds
 
     # Параметры торговли
-    RISK_PERCENT = 2.0  # Риск на сделку в %
-    TRADING_ENABLED = True  # Включить/выключить торговлю
+    RISK_PERCENT = cfg.risk_percent
+    TRADING_ENABLED = cfg.trading_enabled
 
     # Параметры мониторинга позиции
-    BREAKEVEN_ATR_MULT = 1.5   # Активация безубытка при 1.5x ATR прибыли
-    TRAIL_SL_MULT = 1.5        # Трейлинг стопа на 1.5x ATR от best_price
-    TRAIL_TP_MULT = None       # Трейлинг TP отключён (None)
+    BREAKEVEN_ATR_MULT = cfg.breakeven_atr_mult
+    TRAIL_SL_MULT = cfg.trail_sl_mult
+    TRAIL_TP_MULT = cfg.trail_tp_mult
 
     logger.info("=" * 50)
     logger.info(f"🚀 Бот запущен (MTF режим + торговля): {SYMBOL}")

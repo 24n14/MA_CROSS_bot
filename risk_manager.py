@@ -19,31 +19,8 @@ class DynamicRiskManager:
     Менеджер риска с динамическим расчетом стоп-лосса и тейк-профита
     на основе ATR и ADX.
 
-    Логика множителей:
-    - Слабый тренд (ADX < 25): SL = ATR * 1.5, TP = ATR * 1.5
-    - Умеренный тренд (ADX 25-35): SL = ATR * 1.5, TP = ATR * 2.0
-    - Сильный тренд (ADX > 35): SL = ATR * 1.5, TP = ATR * 3.0
-    - Высокая волатильность (ATR > 400): SL = ATR * 2.0 (защита от шпилек)
+    Все множители и пороги берутся из config.RiskConfig.
     """
-
-    # Базовые множители
-    BASE_SL_MULTIPLIER = 1.5
-    BASE_TP_MULTIPLIER = 1.5
-
-    # Пороги ADX
-    ADX_MODERATE = 25  # Начало умеренного тренда
-    ADX_STRONG = 35    # Начало сильного тренда
-
-    # Множители для TP при различных состояниях ADX
-    TP_MULTIPLIERS = {
-        'weak': 1.5,      # ADX < 25
-        'moderate': 2.0,  # ADX 25-35
-        'strong': 3.0     # ADX > 35
-    }
-
-    # Порог высокой волатильности для увеличения SL
-    HIGH_VOLATILITY_ATR = 400.0  # USD
-    HIGH_VOL_SL_MULTIPLIER = 2.0
 
     def __init__(self, exchange: ccxt.Exchange, symbol: str):
         """
@@ -56,6 +33,9 @@ class DynamicRiskManager:
         self.exchange = exchange
         self.symbol = symbol
         self.market = exchange.market(symbol)
+
+        # Загружаем конфигурацию риск-менеджмента
+        self.risk_cfg = cfg.RiskConfig()
 
         # Параметры позиции
         self.position_size = None
@@ -89,12 +69,14 @@ class DynamicRiskManager:
             logger.error(f"❌ ATR = {atr}, невозможно рассчитать SL/TP")
             return entry_price, entry_price
 
+        rc = self.risk_cfg
+
         # --- Расчет множителя стоп-лосса ---
-        sl_multiplier = self.BASE_SL_MULTIPLIER
+        sl_multiplier = rc.base_sl_multiplier
 
         # Если ATR очень высокий - увеличиваем стоп для защиты от шумов
-        if atr >= self.HIGH_VOLATILITY_ATR:
-            sl_multiplier = self.HIGH_VOL_SL_MULTIPLIER
+        if atr >= rc.high_volatility_atr:
+            sl_multiplier = rc.high_vol_sl_multiplier
             logger.debug(f"🔴 Высокая волатильность (ATR={atr:.2f}): SL множитель увеличен до {sl_multiplier}")
 
         # Если передан кастомный множитель - используем его (приоритет)
@@ -102,14 +84,14 @@ class DynamicRiskManager:
             sl_multiplier = atr_multiplier
 
         # --- Расчет множителя тейк-профита ---
-        if adx < self.ADX_MODERATE:
-            tp_multiplier = self.TP_MULTIPLIERS['weak']
+        if adx < rc.adx_moderate_threshold:
+            tp_multiplier = rc.tp_multiplier_weak
             trend_state = 'слабый'
-        elif adx < self.ADX_STRONG:
-            tp_multiplier = self.TP_MULTIPLIERS['moderate']
+        elif adx < rc.adx_strong_threshold:
+            tp_multiplier = rc.tp_multiplier_moderate
             trend_state = 'умеренный'
         else:
-            tp_multiplier = self.TP_MULTIPLIERS['strong']
+            tp_multiplier = rc.tp_multiplier_strong
             trend_state = 'сильный'
 
         # Если передан кастомный RR - используем его для расчета TP
@@ -322,18 +304,19 @@ class DynamicRiskManager:
         Returns:
             Dict: множители и состояния
         """
-        sl_mult = self.BASE_SL_MULTIPLIER
-        if atr >= self.HIGH_VOLATILITY_ATR:
-            sl_mult = self.HIGH_VOL_SL_MULTIPLIER
+        rc = self.risk_cfg
+        sl_mult = rc.base_sl_multiplier
+        if atr >= rc.high_volatility_atr:
+            sl_mult = rc.high_vol_sl_multiplier
 
-        if adx < self.ADX_MODERATE:
-            tp_mult = self.TP_MULTIPLIERS['weak']
+        if adx < rc.adx_moderate_threshold:
+            tp_mult = rc.tp_multiplier_weak
             trend = 'слабый'
-        elif adx < self.ADX_STRONG:
-            tp_mult = self.TP_MULTIPLIERS['moderate']
+        elif adx < rc.adx_strong_threshold:
+            tp_mult = rc.tp_multiplier_moderate
             trend = 'умеренный'
         else:
-            tp_mult = self.TP_MULTIPLIERS['strong']
+            tp_mult = rc.tp_multiplier_strong
             trend = 'сильный'
 
         return {
@@ -355,6 +338,8 @@ class PositionMonitor:
     - Трейлинг стоп-лосс вслед за ценой после безубытка
     - Динамическое обновление TP на основе новых значений ATR
     - Обновление SL/TP на бирже только при значимых изменениях
+
+    Все пороги берутся из config.RiskConfig.
     """
 
     def __init__(
@@ -366,11 +351,11 @@ class PositionMonitor:
         initial_sl: float,
         initial_tp: float,
         atr: float,
-        breakeven_activation_atr: float = 1.5,
-        trail_sl_multiplier: float = 1.5,
+        breakeven_activation_atr: Optional[float] = None,
+        trail_sl_multiplier: Optional[float] = None,
         trail_tp_multiplier: Optional[float] = None,
-        min_update_distance_atr: float = 0.5,
-        min_atr_change_pct: float = 15.0
+        min_update_distance_atr: Optional[float] = None,
+        min_atr_change_pct: Optional[float] = None
     ):
         """
         Инициализация монитора позиции.
@@ -389,6 +374,9 @@ class PositionMonitor:
             min_update_distance_atr: минимальное смещение SL/TP (в долях ATR) для отправки на биржу
             min_atr_change_pct: минимальное изменение ATR в % для отправки на биржу
         """
+        # Загружаем конфигурацию риск-менеджмента
+        rc = cfg.RiskConfig()
+
         self.exchange = exchange
         self.symbol = symbol
         self.side = side
@@ -396,18 +384,20 @@ class PositionMonitor:
         self.current_sl = initial_sl
         self.current_tp = initial_tp
         self.atr = atr
-        self.breakeven_activation_atr = breakeven_activation_atr
-        self.trail_sl_multiplier = trail_sl_multiplier
-        self.trail_tp_multiplier = trail_tp_multiplier
-        self.min_update_distance_atr = min_update_distance_atr
-        self.min_atr_change_pct = min_atr_change_pct
+
+        # Используем переданные значения или значения по умолчанию из RiskConfig
+        self.breakeven_activation_atr = breakeven_activation_atr if breakeven_activation_atr is not None else rc.breakeven_activation_atr
+        self.trail_sl_multiplier = trail_sl_multiplier if trail_sl_multiplier is not None else rc.trail_sl_multiplier
+        self.trail_tp_multiplier = trail_tp_multiplier if trail_tp_multiplier is not None else rc.trail_tp_multiplier
+        self.min_update_distance_atr = min_update_distance_atr if min_update_distance_atr is not None else rc.min_update_distance_atr
+        self.min_atr_change_pct = min_atr_change_pct if min_atr_change_pct is not None else rc.min_atr_change_pct
 
         # Флаги состояния
         self.breakeven_activated = False
         self.best_price = entry_price  # лучшая цена в направлении прибыли
 
         # Порог для активации безубытка
-        self.breakeven_threshold = atr * breakeven_activation_atr
+        self.breakeven_threshold = atr * self.breakeven_activation_atr
 
         # Последние значения, отправленные на биржу (чтобы не слать лишних запросов)
         self._last_exchange_sl = initial_sl
@@ -418,12 +408,12 @@ class PositionMonitor:
         logger.info(f"📊 PositionMonitor создан")
         logger.info(f"   {side.upper()} @ ${entry_price:.2f}")
         logger.info(f"   SL=${initial_sl:.2f} | TP=${initial_tp:.2f} | ATR=${atr:.2f}")
-        logger.info(f"   Breakeven: {breakeven_activation_atr}x ATR = ${self.breakeven_threshold:.2f}")
-        logger.info(f"   Трейлинг SL: {trail_sl_multiplier}x ATR")
-        if trail_tp_multiplier:
-            logger.info(f"   Трейлинг TP: {trail_tp_multiplier}x ATR")
-        logger.info(f"   Мин. сдвиг для обновления: {min_update_distance_atr}x ATR")
-        logger.info(f"   Мин. изм. ATR: {min_atr_change_pct}%")
+        logger.info(f"   Breakeven: {self.breakeven_activation_atr}x ATR = ${self.breakeven_threshold:.2f}")
+        logger.info(f"   Трейлинг SL: {self.trail_sl_multiplier}x ATR")
+        if self.trail_tp_multiplier:
+            logger.info(f"   Трейлинг TP: {self.trail_tp_multiplier}x ATR")
+        logger.info(f"   Мин. сдвиг для обновления: {self.min_update_distance_atr}x ATR")
+        logger.info(f"   Мин. изм. ATR: {self.min_atr_change_pct}%")
         logger.info(f"{'=' * 30}")
 
     def _should_update_exchange(self, new_sl: float, new_tp: float) -> bool:

@@ -1,22 +1,13 @@
 # 🚀 MA-CROSS-BOT
 
 **Многофункциональный индикатор технического анализа** с мультитаймфреймовым анализом тренда на основе углов наклона скользящих средних (MA/EMA) и ATR-нормализацией.
+
 Ключевые особенности решения:
-Динамический SL:
-Базовый множитель 1.5x ATR
-При ATR > 400 увеличивается до 2.0x (защита от высокой волатильности)
-Динамический TP:
-ADX < 25: 1.5x (слабый тренд)
-ADX 25-35: 2.0x (умеренный тренд)
-ADX > 35: 3.0x (сильный тренд)
-Безопасность:
-Проверка корректности ATR/ADX перед открытием
-Защита от повторных входов в том же направлении
-Прокси-поддержка для стабильности подключения
-Интеграция:
-Использует существующий MTF анализ
-Берет данные ATR/ADX со старшего таймфрейма
-Работает с лимитными ордерами + защитные SL/TP
+- Динамический SL/TP на основе ATR и ADX
+- Перевод в безубыток и трейлинг стоп-лосс
+- MTF анализ с взвешенным консенсусом
+- Полная конфигурация через `config.py`
+
 ---
 
 ## 📋 Содержание
@@ -25,27 +16,30 @@ ADX > 35: 3.0x (сильный тренд)
 - [Установка](#установка)
 - [Структура проекта](#структура-проекта)
 - [Быстрый старт](#быстрый-старт)
+- [Конфигурация](#конфигурация)
+  - [Config — параметры индикатора](#config--параметры-индикатора)
+  - [AnalysisConfig — режимы анализа и торговли](#analysisconfig--режимы-анализа-и-торговли)
+  - [RiskConfig — риск-менеджмент](#riskconfig--риск-менеджмент)
+  - [TF_WEIGHTS — веса ��аймфреймов](#tf_weights--веса-таймфреймов)
 - [Архитектура](#архитектура)
 - [Классы и функции](#классы-и-функции)
-  - [Config](#config)
-  - [AnalysisConfig](#analysisconfig)
-  - [ExchangeDataLoader](#exchangedataloader)
-  - [AdvancedTrendSignalIndicator](#advancedtrendsignalindicator)
-  - [MultiTimeframeAnalyzer](#multitimeframeanalyzer)
 - [Сигналы](#сигналы)
 - [Примеры использования](#примеры-использования)
-- [Сохранение результатов](#сохранение-результатов)
 
 ---
 
 ## ✨ Возможности
 
 - ✅ Анализ тренда по углу наклона MA/EMA с ATR-нормализацией
-- ✅ Мультитаймфреймовый анализ (MTF) с взвешенным консенсусом — **основной режим работы**
+- ✅ Мультитаймфреймовый анализ (MTF) с взвешенным консенсусом
 - ✅ Автоматический подбор параметров под таймфрейм (`Config.for_timeframe()`)
-- ✅ Защита от флэта через ADX-фильтр (ADX < 20 → торговля заблокирована)
-- ✅ Фильтр расхождения MA/EMA (`divergence_threshold`) — отсекает ложные сигналы при "слипании" средних
+- ✅ Защита от флэта через ADX-фильтр (порог настраивается)
+- ✅ Фильтр расхождения MA/EMA — отсекает ложные сигналы
 - ✅ Числовая оценка силы сигнала (от -100 до +100)
+- ✅ Динамический SL/TP на основе ATR и ADX
+- ✅ Перевод в безубыток (breakeven) при движении цены
+- ✅ Трейлинг стоп-лосс вслед за ценой
+- ✅ Умное обновление SL/TP на бирже (только при значимых изменениях)
 - ✅ Загрузка реальных данных с 100+ бирж через CCXT
 - ✅ Сохранение результатов в CSV
 - ✅ Непрерывный MTF анализ рынка в реальном времени
@@ -67,15 +61,13 @@ ma-cross-bot/
 ├── logs/                  # Логи работы программы
 │   └── bot_history.log
 ├── csv_history/           # Результаты анализа (CSV)
-│   ├── MTF_BTC_USDT_1h_signals.csv
-│   ├── MTF_BTC_USDT_4h_signals.csv
-│   └── ...
-├── config.py              # Конфигурации (Config, AnalysisConfig)
+├── config.py              # Конфигурации (Config, AnalysisConfig, RiskConfig)
 ├── exchange.py            # Загрузчик данных с бирж (CCXT)
 ├── indicator.py           # Основной индикатор (AdvancedTrendSignalIndicator)
 ├── mtf_analyzer.py        # MTF анализатор (MultiTimeframeAnalyzer)
+├── risk_manager.py        # Риск-менеджмент (DynamicRiskManager, PositionMonitor)
 ├── run.py                 # Функции запуска и вывода
-├── start.py               # Точка входа — непрерывный MTF анализ
+├── start.py               # Точка входа — непрерывный MTF анализ + торговля
 ├── log.py                 # Настройка логирования
 ├── requirements.txt       # Зависимости
 └── readme.md              # Этот файл
@@ -86,51 +78,28 @@ ma-cross-bot/
 ## 🚀 Быстрый старт
 
 ```bash
-# Запуск бота с настройками по умолчанию (BTC/USDT, Binance)
+# Запуск бота с настройками по умолчанию (BTC/USDT, Bybit)
 python start.py
 ```
 
-Бот запускает **непрерывный MTF анализ** в бесконечном цикле:
-1. Загружает данные по всем настроенным таймфреймам (по умолчанию `1h`, `4h`, `1d`)
+Бот запускает **непрерывный MTF анализ + торговлю** в бесконечном цикле:
+1. Загружает данные по всем настроенным таймфреймам
 2. Проводит взвешенный консенсус — агрегирует сигналы со всех ТФ
-3. Выводит результаты в консоль и сохраняет в CSV
-4. Повторяет анализ каждые 5 минут
+3. При наличии сигнала открывает сделку с динамическим SL/TP
+4. Мониторит позицию: переводит в безубыток, подтягивает стоп
+5. Повторяет анализ каждые N секунд (настраивается)
 
 ---
 
-## 🏗 Архитектура
+## ⚙️ Конфигурация
 
-```
-Config                          # Параметры индикатора (MA, EMA, углы)
-└── for_timeframe()             # Автоподбор под таймфрейм
-
-AnalysisConfig                  # Настройка режимов работы
-
-ExchangeDataLoader              # Загрузка данных с бирж
-├── fetch_ohlcv()               # Один таймфрейм
-└── load_multiple_timeframes()  # Несколько таймфреймов
-
-AdvancedTrendSignalIndicator    # Основной индикатор
-├── calculate_angle()           # Угол наклона (с ATR-нормализацией)
-├── calculate_divergence()      # Расхождение MA/EMA (%)
-├── determine_trend_strength()  # Определение тренда (ADX + углы + divergence)
-├── generate_signal()           # Генерация сигналов
-├── _get_enhanced_signal()      # Логика торговых сигналов
-└── _calculate_signal_strength() # Числовая сила сигнала
-
-MultiTimeframeAnalyzer          # MTF анализатор
-├── load_and_analyze()          # Загрузка и анализ всех ТФ
-├── _calculate_final_signal()   # Взвешенная агрегация сигналов
-└── print_analysis()            # Вывод результатов
-```
+Все настраиваемые параметры бота находятся в **`config.py`**. Ниже — полное описание каждого класса и параметра.
 
 ---
 
-## 📚 Классы и функции
+### Config — параметры индикатора
 
-### Config
-
-**Назначение:** Параметры технического индикатора.
+**Назначение:** Параметры технического индикатора (MA, EMA, углы, фильтры).
 
 ```python
 from config import Config
@@ -144,36 +113,25 @@ config = Config.for_timeframe('4h')
 
 #### Параметры
 
-| Параметр                 | Тип     | По умолч. | Описание                                                    |
-|--------------------------|---------|-----------|-------------------------------------------------------------|
-| `ma_period`              | `int`   | `20`      | Период простой скользящей средней (MA)                      |
-| `ema_period`             | `int`   | `50`      | Период экспоненциальной скользящей средней (EMA)            |
-| `trend_lookback`         | `int`   | `20`      | Количество свечей для расчёта угла наклона                  |
-| `angle_threshold_strong` | `float` | `30.0`    | Порог угла для **сильного** тренда (градусы)                |
-| `angle_threshold_weak`   | `float` | `10.0`    | Порог угла для **слабого** тренда (град��сы)                 |
-| `divergence_threshold`   | `float` | `0.1`     | Минимальное расхождение MA/EMA (%) для подтверждения тренда |
-| `use_linear_regression`  | `bool`  | `True`    | Использовать линейную регрессию для расчёта угла            |
-| `smooth_angle`           | `bool`  | `True`    | Сглаживать угол (скользящее среднее по 3 периодам)          |
+| Параметр | Тип | По умолч. | Описание |
+|---|---|---|---|
+| `ma_period` | `int` | `20` | Период простой скользящей средней (MA) |
+| `ema_period` | `int` | `50` | Период экспоненциальной скользящей средней (EMA) |
+| `trend_lookback` | `int` | `20` | Количество свечей для расчёта угла наклона |
+| `angle_threshold_strong` | `float` | `30.0` | Порог угла для **сильного** тренда (градусы) |
+| `angle_threshold_weak` | `float` | `10.0` | Порог угла для **слабого** тренда (градусы) |
+| `divergence_threshold` | `float` | `0.1` | Мин. расхождение MA/EMA (%) для подтверждения тренда |
+| `adx_flat_threshold` | `float` | `20.0` | **ADX ниже этого порога = флэт, торговля заблокирована** |
+| `use_linear_regression` | `bool` | `True` | Использовать линейную регрессию для расчёта угла |
+| `smooth_angle` | `bool` | `True` | Сглаживать угол (скользящее среднее по 3 периодам) |
 
-#### Config.for_timeframe(timeframe: str) -> Config
-
-Автоматически подбирает оптимальные параметры под таймфрейм.
-
-| Таймфрейм         | `ma_period` | `ema_period` | `trend_lookback` | `angle_strong` | `angle_weak` | `divergence` |
-|-------------------|-------------|--------------|------------------|----------------|--------------|--------------|
-| `1m`, `5m`, `15m` | 5           | 21           | 14               | 12.0°          | 5.0°         | 0.05         |
-| `30m`, `1h`       | 10          | 50           | 14               | 10.0°          | 5.0°         | 0.08         |
-| `4h`              | 20          | 100          | 20               | 8.0°           | 3.0°         | 0.15         |
-| `1d`, `1w`        | 50          | 200          | 30               | 5.0°           | 2.0°         | 0.20         |
-| *другие*          | 20          | 50           | 20               | 30.0°          | 10.0°        | 0.10         |
-
-> **Логика подбора:** младшие таймфреймы (скальпинг) — короткие периоды и высокие пороги углов для фильтрации шума. Старшие таймфреймы (стратегические) — длинные периоды и низкие пороги для улавливания глобального тренда.
+> 💡 **`adx_flat_threshold`** — ключевой параметр защиты от флэта. Чем выше значение, тем реже бот будет входить в рынок. Для BTC рекомендуется 20-25.
 
 ---
 
-### AnalysisConfig
+### AnalysisConfig — режимы анализа и торговли
 
-**Назначение:** Централизованная конфигурация режимов анализа и риск-менеджмента.
+**Назначение:** Централизованная конфигурация режимов анализа, торговли и мониторинга позиции.
 
 ```python
 from config import AnalysisConfig
@@ -185,25 +143,187 @@ cfg = AnalysisConfig()
 cfg = AnalysisConfig(
     symbol='ETH/USDT',
     exchange='bybit',
-    mtf_timeframes=('4h', '1d', '1w'),
-    save_csv=True
+    risk_percent=5.0,           # Риск 5% на сделку
+    sleep_seconds=60,           # Анализ каждую минуту
+    breakeven_atr_mult=2.0,     # Безубыток при 2x ATR
+    trail_sl_mult=2.0           # Трейлинг стоп 2x ATR
 )
 ```
 
 #### Параметры
 
-| Параметр            | Тип     | По умолч.            | Описание                                            |
-|---------------------|---------|----------------------|-----------------------------------------------------|
-| `symbol`            | `str`   | `'BTC/USDT'`         | Торговая пара                                       |
-| `exchange`          | `str`   | `'binance'`          | Биржа для загрузки данных                           |
-| `limit`             | `int`   | `500`                | Количество загружаемых свечей                       |
-| `mtf_timeframes`    | `tuple` | `('1h', '4h', '1d')` | Таймфреймы для MTF анализа                          |
-| `save_csv`          | `bool`  | `True`               | Сохранять результаты в CSV                          |
-| `verbose`           | `bool`  | `True`               | Подробный вывод в консоль                           |
-| `atr_multiplier`    | `float` | `2.0`                | Множитель волатильности для динамического Stop Loss |
-| `risk_reward_ratio` | `float` | `2.0`                | Соотношение Risk/Reward для Take Profit             |
+##### Биржа и символ
+
+| Параметр | Тип | По умолч. | Описание |
+|---|---|---|---|
+| `symbol` | `str` | `'BTC/USDT:USDT'` | Торговая пара |
+| `exchange` | `str` | `'bybit'` | Биржа (bybit, binance и т.д.) |
+| `limit` | `int` | `300` | Количество загружаемых свечей |
+
+##### Таймфреймы и вывод
+
+| Параметр | Тип | По умолч. | Описание |
+|---|---|---|---|
+| `mtf_timeframes` | `tuple` | `('5m', '5m', '15m')` | Таймфреймы для MTF анализа |
+| `save_csv` | `bool` | `True` | Сохранять результаты в CSV |
+| `verbose` | `bool` | `True` | Подробный вывод в консоль |
+
+##### Параметры цикла
+
+| Параметр | Тип | По умолч. | Описание |
+|---|---|---|---|
+| `sleep_seconds` | `int` | `300` | **Интервал между циклами анализа (сек)** — 5 мин |
+| `trading_enabled` | `bool` | `True` | **Включить/выключить торговлю** |
+
+##### Параметры риска
+
+| Параметр | Тип | По умолч. | Описание |
+|---|---|---|---|
+| `risk_percent` | `float` | `2.0` | **Риск на сделку в % от депозита** |
+| `min_signal_strength` | `float` | `30.0` | **Минимальная сила сигнала для входа (0-100)** |
+
+##### Параметры мониторинга позиции
+
+| Параметр | Тип | По умолч. | Описание |
+|---|---|---|---|
+| `breakeven_atr_mult` | `float` | `1.5` | **Активация безубытка при N × ATR прибыли** |
+| `trail_sl_mult` | `float` | `1.5` | **Трейлинг стопа на N × ATR от best_price** |
+| `trail_tp_mult` | `Optional[float]` | `None` | **Трейлинг TP (None = отключён)** |
+
+##### Параметры MTF анализа
+
+| Параметр | Тип | По умолч. | Описание |
+|---|---|---|---|
+| `min_strength_for_trade` | `float` | `40.0` | **Мин. взвешенная сила для разрешения входа** |
+| `confidence_very_high` | `float` | `75.0` | >= этого % согласия ТФ → VERY HIGH |
+| `confidence_high` | `float` | `60.0` | >= этого % согласия ТФ → HIGH |
+| `confidence_moderate` | `float` | `45.0` | >= этого % согласия ТФ → MODERATE |
 
 ---
+
+### RiskConfig — риск-менеджмент
+
+**Назначение:** Конфигурация расчёта SL/TP и мониторинга позиции.
+
+```python
+from config import RiskConfig
+
+rc = RiskConfig()
+# Все параметры имеют значения по умолчанию
+```
+
+#### Параметры
+
+##### Базовые множители SL/TP
+
+| Параметр | Тип | По умолч. | Описание |
+|---|---|---|---|
+| `base_sl_multiplier` | `float` | `1.5` | **Базовый множитель стоп-лосса (SL = ATR × multiplier)** |
+| `base_tp_multiplier` | `float` | `1.5` | Базовый множитель тейк-профита |
+
+##### Пороги ADX для множителей TP
+
+| Параметр | Тип | По умолч. | Описание |
+|---|---|---|---|
+| `adx_moderate_threshold` | `float` | `25.0` | ADX >= этого → умеренный тренд |
+| `adx_strong_threshold` | `float` | `35.0` | ADX >= этого → сильный тренд |
+| `tp_multiplier_weak` | `float` | `1.5` | **TP при слабом тренде (ADX < 25)** |
+| `tp_multiplier_moderate` | `float` | `2.0` | **TP при умеренном тренде (ADX 25-35)** |
+| `tp_multiplier_strong` | `float` | `3.0` | **TP при сильном тренде (ADX > 35)** |
+
+##### Защита от высокой волатильности
+
+| Параметр | Тип | По умолч. | Описание |
+|---|---|---|---|
+| `high_volatility_atr` | `float` | `400.0` | **Порог ATR ($) — при превышении SL увеличивается** |
+| `high_vol_sl_multiplier` | `float` | `2.0` | Множитель SL при ATR >= high_volatility_atr |
+
+##### Параметры мониторинга позиции (PositionMonitor)
+
+| Параметр | Тип | По умолч. | Описание |
+|---|---|---|---|
+| `breakeven_activation_atr` | `float` | `1.5` | Множитель ATR для активации безубытка |
+| `trail_sl_multiplier` | `float` | `1.5` | Множитель ATR для трейлинга стопа |
+| `trail_tp_multiplier` | `Optional[float]` | `None` | Множитель ATR для трейлинга TP (None = откл) |
+| `min_update_distance_atr` | `float` | `0.5` | **Мин. сдвиг SL/TP (в долях ATR) для отправки на биржу** |
+| `min_atr_change_pct` | `float` | `15.0` | **Мин. изменение ATR в % для пересчёта** |
+
+> 💡 **`min_update_distance_atr`** — защита от лишних запросов к бирже. При 0.5x ATR стоп сдвинется на бирже только если изменение ≥ половины текущего ATR.
+
+---
+
+### TF_WEIGHTS — веса таймфреймов
+
+**Назначение:** Веса таймфреймов для взвешенного консенсуса в MTF анализе. Старшие ТФ имеют больший вес, чтобы младшие не перевешивали.
+
+```python
+from config import TF_WEIGHTS
+
+# Значения по умолчанию
+TF_WEIGHTS = {
+    '1m': 0.05, '5m': 0.20, '15m': 0.20,
+    '30m': 0.20, '1h': 0.35, '4h': 0.60,
+    '1d': 0.85, '1w': 1.00
+}
+```
+
+| Таймфрейм | Вес | Описание |
+|---|---|---|
+| `1m` | 0.05 | Минимальное влияние (шумы) |
+| `5m` | 0.20 | |
+| `15m` | 0.20 | |
+| `30m` | 0.20 | |
+| `1h` | 0.35 | Среднее влияние |
+| `4h` | 0.60 | Высокое влияние |
+| `1d` | 0.85 | Очень высокое влияние |
+| `1w` | 1.00 | Максимальное влияние |
+
+---
+
+## 🏗 Архитектура
+
+```
+Config                          # Параметры индикатора (MA, EMA, углы, ADX порог)
+└── for_timeframe()             # Автоподбор под таймфрейм
+
+AnalysisConfig                  # Настройка режимов работы, торговли, мониторинга
+
+RiskConfig                      # Параметры риск-менеджмента (SL/TP, трейлинг)
+
+ExchangeDataLoader              # Загрузка данных с бирж
+├── fetch_ohlcv()               # Один таймфрейм
+├── load_multiple_timeframes()  # Несколько таймфреймов
+└── execute_trade_signal()      # Исполнение торгового сигнала
+
+AdvancedTrendSignalIndicator    # Основной индикатор
+├── calculate_angle()           # Угол наклона (с ATR-нормализацией)
+├── calculate_divergence()      # Расхождение MA/EMA (%)
+├── determine_trend_strength()  # Определение тренда (ADX + углы + divergence)
+├── generate_signal()           # Генерация сигналов
+├── _get_enhanced_signal()      # Логика торговых сигналов
+└── _calculate_signal_strength() # Числовая сила сигнала
+
+MultiTimeframeAnalyzer          # MTF анализатор
+├── load_and_analyze()          # Загрузка и анализ всех ТФ
+├── _calculate_final_signal()   # Взвешенная агрегация сигналов
+└── print_analysis()            # Вывод результатов
+
+DynamicRiskManager              # Расчёт SL/TP и исполнение ордеров
+├── calculate_sl_tp()           # Динамический расчёт SL/TP
+├── calculate_position_size()   # Расчёт размера позиции
+└── place_limit_order()         # Размещение ордера с SL/TP
+
+PositionMonitor                 # Мониторинг открытой позиции
+├── update()                    # Обновление SL/TP по рынку
+├── _calculate_trailing_sl()    # Трейлинг стоп-лосс
+├── _calculate_trailing_tp()    # Трейлинг тейк-профит
+├── _update_on_exchange()       # Отправка на биржу
+└── is_position_open()          # Проверка статуса позиции
+```
+
+---
+
+## 📚 Классы и функции
 
 ### ExchangeDataLoader
 
@@ -212,7 +332,7 @@ cfg = AnalysisConfig(
 ```python
 from exchange import ExchangeDataLoader
 
-loader = ExchangeDataLoader('binance')
+loader = ExchangeDataLoader('bybit')
 ```
 
 Поддерживает **100+ бирж**: Binance, Bybit, Kraken, KuCoin, OKX, Huobi и др.
@@ -223,253 +343,67 @@ loader = ExchangeDataLoader('binance')
 
 Загружает свечные данные с биржи.
 
-| Параметр    | Тип   | Описание                                                                     |
-|-------------|-------|------------------------------------------------------------------------------|
-| `symbol`    | `str` | Торговая пара (`'BTC/USDT'`, `'ETH/USDT'`)                                   |
+| Параметр | Тип | Описание |
+|---|---|---|
+| `symbol` | `str` | Торговая пара (`'BTC/USDT'`, `'ETH/USDT'`) |
 | `timeframe` | `str` | Таймфрейм (`'1m'`, `'5m'`, `'15m'`, `'30m'`, `'1h'`, `'4h'`, `'1d'`, `'1w'`) |
-| `limit`     | `int` | Количество свечей (макс. зависит от биржи)                                   |
-| `since`     | `str` | Начальная дата (`'2024-01-01'`) или `None`                                   |
+| `limit` | `int` | Количество свечей (макс. зависит от биржи) |
+| `since` | `str` | Начальная дата (`'2024-01-01'`) или `None` |
 
 **Возвращает:** `DataFrame` с колонками: `open`, `high`, `low`, `close`, `volume`.
 
-```python
-# Последние 500 свечей
-df = loader.fetch_ohlcv('BTC/USDT', '4h', 500)
+##### `execute_trade_signal(signal_data, risk_percent) -> Optional[Dict]`
 
-# Свечи с определённой даты
-df = loader.fetch_ohlcv('ETH/USDT', '1h', 1000, since='2024-01-01')
-```
+Исполняет торговый сигнал: рассчитывает SL/TP, размер позиции и размещает ордер.
 
-##### `load_multiple_timeframes(symbol, timeframes, limit) -> Dict[str, pd.DataFrame]`
-
-Загружает данные для нескольких таймфреймов одновременно.
-
-```python
-data = loader.load_multiple_timeframes(
-    'BTC/USDT',
-    timeframes=('15m', '1h', '4h', '1d'),
-    limit=500
-)
-
-df_1h = data['1h']
-df_4h = data['4h']
-```
+| Параметр | Тип | Описание |
+|---|---|---|
+| `signal_data` | `Dict` | Данные сигнала (direction, strength, atr, adx, close) |
+| `risk_percent` | `float` | Процент риска на сделку |
 
 ---
 
-### AdvancedTrendSignalIndicator
+### DynamicRiskManager
 
-**Назначение:** Основной индикатор для анализа тренда и генерации сигналов.
-
-```python
-from indicator import AdvancedTrendSignalIndicator
-from config import Config
-
-config = Config.for_timeframe('4h')
-indicator = AdvancedTrendSignalIndicator(config)
-result = indicator.generate_signal(df)
-```
-
-#### Методы
-
-##### `calculate_angle(series: pd.Series, atr: pd.Series) -> pd.Series`
-
-Рассчитывает угол наклона скользящей средней в градусах с **ATR-нормализацией**.
-
-**Алгоритм:**
-1. Берёт последние `trend_lookback` значений
-2. Строит линейную регрессию (или простой расчёт, если `use_linear_regression=False`)
-3. Нормализует наклон по ATR: `angle = arctan(slope / current_atr)`
-
-**Интерпретация:**
-- `> 0°` — линия растёт (восходящий тренд)
-- `< 0°` — линия падает (нисходящий тренд)
-- `≈ 0°` — линия горизонтальна (флэт)
-
-##### `calculate_divergence(ma: pd.Series, ema: pd.Series) -> pd.Series`
-
-Рассчитывает расхождение между MA и EMA в процентах.
-
-```
-divergence = |(MA - EMA) / EMA * 100|
-```
-
-**Интерпретация:**
-- Большое расхождение → сильный тренд
-- Маленькое расхождение → слабый тренд или флэт
-- Расхождение → 0 → готовится пересечение (смена тренда)
-
-##### `determine_trend_strength(ma_angle, ema_angle, divergence, current_adx) -> Dict`
-
-Определяет направление и силу тренда с учётом ADX и расхождения MA/EMA.
-
-**Логика определения направления:**
-1. Если ADX < 20 → **neutral** (флэт, торговля заблокирована)
-2. Если максимальный угол (MA или EMA) > `angle_threshold_weak` → **up**
-3. Если максимальный угол (MA или EMA) < `-angle_threshold_weak` → **down**
-4. Иначе → **neutral**
-
-**Логика определения силы:**
-1. Если `divergence < divergence_threshold` → **weak** (MA и EMA почти совпадают — тренд не подтверждён)
-2. Средний угол > `angle_threshold_strong` **И** ADX > 35 → **strong**
-3. Средний угол > `angle_threshold_weak` **И** ADX ≥ 20 → **moderate**
-4. Иначе → **weak**
-
-**Возвращает:**
-```python
-{
-    'direction': 'up' | 'down' | 'neutral',
-    'strength': 'strong' | 'moderate' | 'weak' | 'none',
-    'confidence': 0.0 до 1.0
-}
-```
-
-##### `generate_signal(df: pd.DataFrame) -> pd.DataFrame`
-
-Главный метод генерации сигналов. Добавляет к DataFrame расчётные колонки.
-
-| Колонка | Описание |
-|---|---|
-| `MA` | Простая скользящая средняя |
-| `EMA` | Экспоненциальная скользящая средняя |
-| `ATR` | Средний истинный диапазон (волатильность) |
-| `ADX` | Индекс направленного движения (сила тренда) |
-| `MA_Angle` | Угол наклона MA в градусах |
-| `EMA_Angle` | Угол наклона EMA в градусах |
-| `Divergence` | Расхождение MA/EMA в % |
-| `Signal` | Текстовый торговый сигнал |
-| `Signal_Strength` | Числовая сила сигнала (-100 до +100) |
-| `Trend_State` | Состояние тренда: `UP`, `DOWN` или `NO_TREND` |
-| `Trend_Confidence` | Уверенность в тренде (0.3 – 0.7) |
+**Назначение:** Расчёт динамических SL/TP на основе ATR и ADX, размещение ордеров.
 
 ```python
-indicator = AdvancedTrendSignalIndicator(config)
-result = indicator.generate_signal(df)
+from risk_manager import DynamicRiskManager
 
-# Последний сигнал
-print(result['Signal'].iloc[-1])
-print(f"Сила: {result['Signal_Strength'].iloc[-1]}")
+risk_mgr = DynamicRiskManager(exchange, 'BTC/USDT:USDT')
+sl, tp = risk_mgr.calculate_sl_tp(entry_price=64000, atr=136, adx=42, side='long')
 ```
 
-##### `_get_enhanced_signal(c, o, ma, ema, is_bullish, is_bearish, trend_info) -> str`
-
-Внутренний метод. Генерирует текстовый сигнал на основе всех факторов.
-
-**Логика:**
-- Если `direction = 'neutral'` → `Sideways` (флэт)
-- Если `direction = 'up'` и цена/открытие выше MA и EMA:
-  - `strong`/`moderate` → `STRONG BULLISH`
-  - `weak` → `Bullish`
-  - иначе → `Neutral`
-- Если `direction = 'down'` и цена/открытие ниже MA и EMA:
-  - `strong`/`moderate` → `STRONG BEARISH`
-  - `weak` → `Bearish`
-  - иначе → `Neutral`
-
-> Полностью исключает торговлю против тренда и "пилу".
-
-##### `_calculate_signal_strength(trend_info, is_bullish, is_bearish) -> float`
-
-Рассчитывает числовую силу сигнала от **-100 до +100**.
-
-| Условие | Базовая сила |
-|---|---|
-| Восходящий тренд | +50 |
-| Нисходящий тренд | -50 |
-
-**Модификаторы:**
-- Сильный тренд: ×1.5
-- Умеренный тренд: ×1.2
-- Свеча против тренда: ×0.5
+Все множители и пороги берутся из **`RiskConfig`**.
 
 ---
 
-### MultiTimeframeAnalyzer
+### PositionMonitor
 
-**Назначение:** Мультитаймфреймовый анализ для фильтрации ложных сигналов.
+**Назначение:** Мониторинг открытой позиции с автоматическим переводом в безубыток и трейлингом.
 
 ```python
-from mtf_analyzer import MultiTimeframeAnalyzer
+from risk_manager import PositionMonitor
 
-mtf = MultiTimeframeAnalyzer(
-    timeframes=['1h', '4h', '1d'],
-    exchange_name='binance',
-    symbol='BTC/USDT'
+monitor = PositionMonitor(
+    exchange=exchange,
+    symbol='BTC/USDT:USDT',
+    side='long',
+    entry_price=64000,
+    initial_sl=63800,
+    initial_tp=64500,
+    atr=136
 )
+
+# В каждом цикле:
+updates = monitor.update(current_price=64500, new_atr=140)
 ```
 
-#### Методы
-
-##### `load_and_analyze(limit: int = 500) -> Dict`
-
-Загружает данные для всех таймфреймов и проводит полный анализ.
-
-**Процесс:**
-1. Загружает данные через `ExchangeDataLoader.load_multiple_timeframes()`
-2. Для каждого ТФ создаёт индикатор с авто-конфигурацией (`Config.for_timeframe()`)
-3. Генерирует сигналы для каждого ТФ
-4. Агрегирует результаты через взвешенный консенсус
-
-**Возвращает:**
-```python
-{
-    'symbol': 'BTC/USDT',
-    'timeframes': ['1h', '4h', '1d'],
-    'timestamp': datetime,
-    'mtf_details': [...],   # Детали по каждому ТФ
-    'final_signal': {...},  # Агрегированный сигнал
-    'results': {...}        # Полные DataFrame для каждого ТФ
-}
-```
-
-##### `_calculate_final_signal(summary: List[Dict]) -> Dict`
-
-Агрегирует сигналы с разных таймфреймов через **взвешенный консенсус**.
-
-**Веса таймфреймов** (старшие имеют больший вес):
-
-| Таймфрейм | Вес |
-|---|---|
-| `1m` | 0.05 |
-| `5m` | 0.10 |
-| `15m` | 0.15 |
-| `30m` | 0.20 |
-| `1h` | 0.35 |
-| `4h` | 0.60 |
-| `1d` | 0.85 |
-| `1w` | 1.00 |
-
-**Формула взвешенной силы:**
-```
-final_strength = Σ(signal_strength × tf_weight) / Σ(tf_weight)
-```
-
-**Защита от рассинхронизации:** если итоговый вектор младших ТФ идёт против старшего тренда — направление принудительно сбрасывается в `NEUTRAL`.
-
-**Логика уверенности:**
-
-| Согласованность ТФ | Уверенность |
-|---|---|
-| ≥ 75% | VERY HIGH |
-| ≥ 60% | HIGH |
-| ≥ 45% | MODERATE |
-| < 45% | LOW |
-
-**Возвращает:**
-```python
-{
-    'direction': 'BULLISH' | 'BEARISH' | 'NEUTRAL',
-    'confidence': 'VERY HIGH' | 'HIGH' | 'MODERATE' | 'LOW',
-    'strength': float,        # Взвешенная сила
-    'agreement': float,       # % согласованности
-    'trigger_trade': bool,    # Разрешение на вход
-    'total_timeframes': int   # Всего ТФ
-}
-```
-
-##### `print_analysis(analysis: Dict)`
-
-Выводит форматированную таблицу с результатами MTF анализа.
+**Логика работы:**
+1. Цена прошла ≥ 1.5× ATR в прибыль → SL переводится на цену входа (безубыток)
+2. После безубытка SL подтягивается вслед за ценой (трейлинг)
+3. На биржу изменения отправляются только если сдвиг ≥ 0.5× ATR
+4. ATR пересчитывается только при изменении > 15%
 
 ---
 
@@ -491,194 +425,77 @@ final_strength = Σ(signal_strength × tf_weight) / Σ(tf_weight)
 ```
 -100 ═══ -75 ═══ -50 ═══ -25 ═══ 0 ═══ +25 ═══ +50 ═══ +75 ═══ +100
   🔴🔴      🔴       🔴       🟠      ⚪      🟡       🟢       🟢       🟢🟢
-Максимально                                                    Максимально
-медвежий                                                        бычий
 ```
-
-| Диапазон | Значение |
-|---|---|
-| +75 до +100 | Очень сильный бычий сигнал |
-| +50 до +75 | Сильный бычий |
-| +25 до +50 | Умеренный бычий |
-| 0 до +25 | Слабый бычий |
-| 0 до -25 | Слабый медвежий |
-| -25 до -50 | Умеренный медвежий |
-| -50 до -75 | Сильный медвежий |
-| -75 до -100 | Очень сильный медвежий сигнал |
 
 ---
 
 ## 💡 Примеры использования
 
-### Пример 1: Запуск непрерывного MTF анализа
-
-```bash
-python start.py
-```
-
-Бот запускает MTF анализ в бесконечном цикле каждые 5 минут. Анализирует таймфреймы `1h`, `4h`, `1d` (настраивается в `AnalysisConfig.mtf_timeframes`) и выводит взвешенный консенсус.
-
-### Пример 2: Быстрая смена торговой пары
+### Пример 1: Настройка агрессивной стратегии
 
 ```python
 from config import AnalysisConfig
 
-# Bitcoin
-cfg = AnalysisConfig(symbol='BTC/USDT')
-
-# Ethereum
-cfg = AnalysisConfig(symbol='ETH/USDT')
-
-# Solana
-cfg = AnalysisConfig(symbol='SOL/USDT')
-```
-
-### Пример 3: Быстрая смена биржи
-
-```python
-# Binance
-cfg = AnalysisConfig(exchange='binance')
-
-# Bybit
-cfg = AnalysisConfig(exchange='bybit')
-
-# Kraken
-cfg = AnalysisConfig(exchange='kraken')
-```
-
-### Пример 4: Ручная настройка параметров индикатора
-
-```python
-from config import Config
-
-# Агрессивная стратегия (быстрые сигналы)
-config = Config(
-    ma_period=10,
-    ema_period=21,
-    trend_lookback=10,
-    angle_threshold_weak=15.0,
-    angle_threshold_strong=40.0
-)
-
-# Консервативная стратегия (медленные, но надёжные сигналы)
-config = Config(
-    ma_period=100,
-    ema_period=200,
-    trend_lookback=50,
-    angle_threshold_weak=3.0,
-    angle_threshold_strong=10.0
+cfg = AnalysisConfig(
+    risk_percent=5.0,           # Риск 5% на сделку
+    breakeven_atr_mult=1.0,     # Безубыток при 1x ATR (быстрее)
+    trail_sl_mult=1.0,          # Трейлинг стоп 1x ATR (плотнее)
+    min_signal_strength=20.0,   # Пропускать даже слабые сигналы
+    min_strength_for_trade=30.0 # Нижний порог для входа
 )
 ```
 
-### Пример 5: MTF анализ в коде
+### Пример 2: Настройка консервативной стратегии
 
 ```python
 from config import AnalysisConfig
-from run import run_mtf_analysis
 
-cfg = AnalysisConfig(symbol='BTC/USDT')
-result = run_mtf_analysis(cfg)
-
-if result and result['analysis']:
-    final = result['analysis']['final_signal']
-    print(f"Направление: {final['direction']}")
-    print(f"Уверенность: {final['confidence']}")
-    print(f"Сила: {final['strength']}")
+cfg = AnalysisConfig(
+    risk_percent=1.0,           # Риск 1% на сделку
+    breakeven_atr_mult=2.5,     # Безубыток при 2.5x ATR
+    trail_sl_mult=2.0,          # Широкий трейлинг
+    min_signal_strength=50.0,   # Только сильные сигналы
+    min_strength_for_trade=60.0 # Высокий порог входа
+)
 ```
 
----
-
-## 💾 Сохранение результатов
-
-### Имена файлов
-
-| Режим | Формат имени |
-|---|---|
-| MTF | `MTF_{SYMBOL}_{TIMEFRAME}_signals.csv` |
-
-### Структура CSV
-
-| Колонка | Тип | Описание |
-|---|---|---|
-| `timestamp` | datetime | Дата и время свечи |
-| `open` | float | Цена открытия |
-| `high` | float | Максимальная цена |
-| `low` | float | Минимальная цена |
-| `close` | float | Цена закрытия |
-| `volume` | float | Объём торгов |
-| `MA` | float | Скользящая средняя |
-| `EMA` | float | Экспоненциальная средняя |
-| `ATR` | float | Средний истинный диапазон |
-| `ADX` | float | Индекс направленного движения |
-| `MA_Angle` | float | Угол наклона MA |
-| `EMA_Angle` | float | Угол наклона EMA |
-| `Divergence` | float | Расхождение MA/EMA (%) |
-| `Signal` | str | Текстовый сигнал |
-| `Signal_Strength` | float | Сила сигнала (-100 до +100) |
-| `Trend_State` | str | Состояние тренда: `UP`, `DOWN` или `NO_TREND` |
-| `Trend_Confidence` | float | Уверенность в тренде (0.3 – 0.7) |
-
-### Отключение сохранения
+### Пример 3: Настройка SL/TP под свою стратегию
 
 ```python
-cfg = AnalysisConfig(save_csv=False)
+from config import RiskConfig
+
+# Агрессивный TP, широкий SL
+rc = RiskConfig(
+    base_sl_multiplier=2.0,     # Широкий стоп
+    tp_multiplier_weak=2.0,     # TP при слабом тренде
+    tp_multiplier_moderate=3.0, # TP при умеренном тренде
+    tp_multiplier_strong=4.0,   # TP при сильном тренде
+    high_volatility_atr=500.0   # Выше порог волатильности
+)
 ```
 
----
+### Пример 4: Изменение весов таймфреймов
 
-## ❓ Часто задаваемые вопросы
+```python
+from config import TF_WEIGHTS
 
-**В: Почему MTF показывает `NO_TREND`, а угол MA положительный?**
-
-**О:** Это означает, что ADX < 20 — на рынке флэт. Система заблокировала торговлю, даже если углы выглядят привлекательно. Это защита от ложных сигналов.
-
-**В: Почему Signal = `Neutral`, хотя Trend_State = `UP` и Signal_Strength = 60.0?**
-
-**О:** Это штатная ситуация. `Trend_State` и `Signal_Strength` — это оценка **глобального тренда** (на основе ADX и углов MA/EMA). А `Signal` — это **команда на вход**, которая требует дополнительных условий:
-
+# Дать больше веса младшим ТФ
+custom_weights = TF_WEIGHTS.copy()
+custom_weights['5m'] = 0.35
+custom_weights['15m'] = 0.35
+custom_weights['1h'] = 0.30
 ```
-Trend_State = UP     → бот видит восходящий тренд (ADX > 20, угол MA > порога)
-Signal_Strength = 60 → математическая оценка силы тренда (50 × 1.2 = moderate)
-Signal = Neutral     → цена НЕ над MA или свеча медвежья — вход не разрешён
-```
-
-**Условия для сигнала `STRONG BULLISH` / `Bullish`:**
-1. `close > MA` **И** `open > MA` — цена полностью выше скользящей
-2. `close > open` — бычья свеча
-
-Если хотя бы одно условие не выполнено — бот говорит `Neutral` (режим ожидания). Это защита от входа в рынок на откате или медвежьей свече.
-
-**В: Какой таймфрейм лучше использовать?**
-
-**О:** Зависит от стиля торговли:
-- **Скальпинг:** `5m`, `15m`
-- **Внутридневная:** `1h`
-- **Свинг-трейдинг:** `4h`
-- **Долгосрочная:** `1d`
-
-Рекомендуется MTF с комбинацией `1h + 4h + 1d`.
-
-**В: Почему много `Sideways` сигналов?**
-
-**О:** Это нормально для флэта. Индикатор специально не генерирует ложные сигналы в боковике. Попробуйте уменьшить `angle_threshold_weak` для более частых сигналов.
-
-**В: Как интерпретировать `Signal_Strength`?**
-
-**О:** Это агрегированная оценка:
-- `|strength| > 75` — очень сильный сигнал
-- `|strength| > 50` — сильный сигнал
-- `|strength| > 25` — умеренный сигнал
-- `|strength| < 25` — слабый сигнал (лучше пропустить)
 
 ---
 
 ## 🔧 Импорты
 
 ```python
-from config import Config, AnalysisConfig
+from config import Config, AnalysisConfig, RiskConfig, TF_WEIGHTS
 from exchange import ExchangeDataLoader
 from indicator import AdvancedTrendSignalIndicator
 from mtf_analyzer import MultiTimeframeAnalyzer
+from risk_manager import DynamicRiskManager, PositionMonitor
 from run import run_mtf_analysis, print_mtf_result
 ```
 
