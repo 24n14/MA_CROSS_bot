@@ -1,7 +1,8 @@
 """
 Модуль управления рисками и исполнения ордеров с динамическим ATR/ADX позиционированием.
-Содержит класс:
+Содержит классы:
 - DynamicRiskManager: расчет и исполнение ордеров с адаптивными множителями
+- PositionMonitor: мониторинг и динамическое обновление SL/TP открытой позиции
 """
 import pandas as pd
 import numpy as np
@@ -211,6 +212,13 @@ class DynamicRiskManager:
                 'reduceOnly': reduce_only,
             }
 
+            # Для линейных фьючерсов (Bybit) передаём TP/SL прямо в ордер
+            if self.market.get('linear', False):
+                order_params['stopLossPrice'] = stop_loss_price
+                order_params['takeProfitPrice'] = take_profit_price
+                logger.info(f"🛑 SL в ордере: ${stop_loss_price:.2f}")
+                logger.info(f"🎯 TP в ордере: ${take_profit_price:.2f}")
+
             # Размещаем лимитный ордер
             logger.info(f"📝 Размещение лимитного ордера: {side} {amount} @ ${price:.2f}")
             order = self.exchange.create_order(
@@ -224,20 +232,9 @@ class DynamicRiskManager:
 
             logger.info(f"✅ Ордер размещен: ID {order['id']}")
 
-            # Размещаем стоп-лосс и тейк-профит как отдельные ордера
-            time.sleep(0.5)  # Небольшая задержка между ордерами
-
-            if self.market.get('linear', False):
-                # Для Bybit фьючерсов используем параметры TP/SL
-                self._place_bybit_tp_sl(
-                    order_id=order['id'],
-                    position_idx=0,  # Обе стороны
-                    stop_loss=stop_loss_price,
-                    take_profit=take_profit_price,
-                    amount=amount
-                )
-            else:
-                # Для других бирж размещаем отдельные ордера
+            # Для нелинейных рынков размещаем OCO ордера отдельно
+            if not self.market.get('linear', False):
+                time.sleep(0.5)
                 self._place_oco_orders(
                     main_order_id=order['id'],
                     side='sell' if side == 'buy' else 'buy',
@@ -255,36 +252,6 @@ class DynamicRiskManager:
         except Exception as e:
             logger.error(f"❌ Ошибка при размещении ордера: {e}")
             return {}
-
-    def _place_bybit_tp_sl(
-        self,
-        order_id: str,
-        position_idx: int,
-        stop_loss: float,
-        take_profit: float,
-        amount: float
-    ):
-        """
-        Размещение TP/SL для Bybit фьючерсов.
-        """
-        try:
-            # Устанавливаем TP/SL через позицию
-            tp_sl_params = {
-                'symbol': self.symbol,
-                'orderId': order_id,
-                'positionIdx': position_idx,
-                'stopLoss': str(stop_loss),
-                'takeProfit': str(take_profit),
-                'tpTriggerBy': 'LastPrice',
-                'slTriggerBy': 'LastPrice'
-            }
-
-            self.exchange.private_post_v5_position_set_trading_stop(tp_sl_params)
-            logger.info(f"🛑 SL установлен: ${stop_loss:.2f}")
-            logger.info(f"🎯 TP установлен: ${take_profit:.2f}")
-
-        except Exception as e:
-            logger.error(f"❌ Ошибка установки TP/SL на Bybit: {e}")
 
     def _place_oco_orders(
         self,
@@ -376,4 +343,307 @@ class DynamicRiskManager:
             'rr_ratio': round(tp_mult / sl_mult, 2),
             'sl_distance': round(atr * sl_mult, 2),
             'tp_distance': round(atr * tp_mult, 2)
+        }
+
+
+class PositionMonitor:
+    """
+    Мониторинг и динамическое обновление SL/TP открытой позиции.
+
+    Возможности:
+    - Перевод в безубыток (breakeven) при движении цены в прибыль
+    - Трейлинг стоп-лосс вслед за ценой после безубытка
+    - Динамическое обновление TP на основе новых значений ATR
+    - Обновление SL/TP на бирже только при значимых изменениях
+    """
+
+    def __init__(
+        self,
+        exchange: ccxt.Exchange,
+        symbol: str,
+        side: str,
+        entry_price: float,
+        initial_sl: float,
+        initial_tp: float,
+        atr: float,
+        breakeven_activation_atr: float = 1.5,
+        trail_sl_multiplier: float = 1.5,
+        trail_tp_multiplier: Optional[float] = None,
+        min_update_distance_atr: float = 0.5,
+        min_atr_change_pct: float = 15.0
+    ):
+        """
+        Инициализация монитора позиции.
+
+        Args:
+            exchange: экземпляр биржи CCXT
+            symbol: торговая пара
+            side: направление ('long' или 'short')
+            entry_price: цена входа
+            initial_sl: начальный стоп-лосс
+            initial_tp: начальный тейк-профит
+            atr: значение ATR на момент входа
+            breakeven_activation_atr: множитель ATR для активации безубытка
+            trail_sl_multiplier: множитель ATR для трейлинга стопа
+            trail_tp_multiplier: множитель ATR для трейлинга TP (None = не трейлить)
+            min_update_distance_atr: минимальное смещение SL/TP (в долях ATR) для отправки на биржу
+            min_atr_change_pct: минимальное изменение ATR в % для отправки на биржу
+        """
+        self.exchange = exchange
+        self.symbol = symbol
+        self.side = side
+        self.entry_price = entry_price
+        self.current_sl = initial_sl
+        self.current_tp = initial_tp
+        self.atr = atr
+        self.breakeven_activation_atr = breakeven_activation_atr
+        self.trail_sl_multiplier = trail_sl_multiplier
+        self.trail_tp_multiplier = trail_tp_multiplier
+        self.min_update_distance_atr = min_update_distance_atr
+        self.min_atr_change_pct = min_atr_change_pct
+
+        # Флаги состояния
+        self.breakeven_activated = False
+        self.best_price = entry_price  # лучшая цена в направлении прибыли
+
+        # Порог для активации безубытка
+        self.breakeven_threshold = atr * breakeven_activation_atr
+
+        # Последние значения, отправленные на биржу (чтобы не слать лишних запросов)
+        self._last_exchange_sl = initial_sl
+        self._last_exchange_tp = initial_tp
+        self._last_exchange_atr = atr
+
+        logger.info(f"\n{'=' * 30}")
+        logger.info(f"📊 PositionMonitor создан")
+        logger.info(f"   {side.upper()} @ ${entry_price:.2f}")
+        logger.info(f"   SL=${initial_sl:.2f} | TP=${initial_tp:.2f} | ATR=${atr:.2f}")
+        logger.info(f"   Breakeven: {breakeven_activation_atr}x ATR = ${self.breakeven_threshold:.2f}")
+        logger.info(f"   Трейлинг SL: {trail_sl_multiplier}x ATR")
+        if trail_tp_multiplier:
+            logger.info(f"   Трейлинг TP: {trail_tp_multiplier}x ATR")
+        logger.info(f"   Мин. сдвиг для обновления: {min_update_distance_atr}x ATR")
+        logger.info(f"   Мин. изм. ATR: {min_atr_change_pct}%")
+        logger.info(f"{'=' * 30}")
+
+    def _should_update_exchange(self, new_sl: float, new_tp: float) -> bool:
+        """
+        Проверить, достаточно ли значительны изменения, чтобы отправить их на биржу.
+
+        Args:
+            new_sl: новый стоп-лосс
+            new_tp: новый тейк-профит
+
+        Returns:
+            bool: True если нужно обновить на бирже
+        """
+        # Всегда обновляем при первом переводе в безубыток
+        if self.breakeven_activated and self._last_exchange_sl == self.current_sl:
+            return True
+
+        # Проверяем изменение SL
+        sl_change = abs(new_sl - self._last_exchange_sl)
+        sl_significant = sl_change >= self.atr * self.min_update_distance_atr
+
+        # Проверяем изменение TP
+        tp_change = abs(new_tp - self._last_exchange_tp)
+        tp_significant = tp_change >= self.atr * self.min_update_distance_atr
+
+        return sl_significant or tp_significant
+
+    def _should_update_atr(self, new_atr: float) -> bool:
+        """Проверить, достаточно ли изменился ATR для пересчёта."""
+        if self._last_exchange_atr <= 0:
+            return True
+        change_pct = abs(new_atr - self._last_exchange_atr) / self._last_exchange_atr * 100
+        return change_pct >= self.min_atr_change_pct
+
+    def update(self, current_price: float, new_atr: Optional[float] = None) -> Dict:
+        """
+        Обновить SL/TP на основе текущей рыночной цены.
+        Отправляет изменения на биржу ТОЛЬКО при значимых сдвигах.
+
+        Args:
+            current_price: текущая рыночная цена
+            new_atr: новое значение ATR (если изменилось)
+
+        Returns:
+            Dict: словарь с информацией о произведённых обновлениях
+        """
+        # Обновляем ATR если он значимо изменился
+        atr_changed = False
+        if new_atr is not None and new_atr > 0 and self._should_update_atr(new_atr):
+            old_atr = self.atr
+            self.atr = new_atr
+            self.breakeven_threshold = self.atr * self.breakeven_activation_atr
+            atr_changed = True
+            logger.info(f"📊 ATR обновлён: ${old_atr:.2f} → ${new_atr:.2f}")
+
+        # Расчёт текущей прибыли и обновление best_price
+        if self.side == 'long':
+            profit = current_price - self.entry_price
+            is_profitable = profit > 0
+            if current_price > self.best_price:
+                self.best_price = current_price
+        else:  # short
+            profit = self.entry_price - current_price
+            is_profitable = profit > 0
+            if current_price < self.best_price:
+                self.best_price = current_price
+
+        updates = {}
+        need_exchange_update = False
+
+        # --- 1. Перевод в безубыток ---
+        if not self.breakeven_activated and is_profitable and profit >= self.breakeven_threshold:
+            self.current_sl = self.entry_price
+            self.breakeven_activated = True
+            need_exchange_update = True
+            updates['breakeven'] = {
+                'activated': True,
+                'sl': self.entry_price
+            }
+            logger.info(f"🔒 BREAKEVEN АКТИВИРОВАН! SL → ${self.entry_price:.2f}")
+
+        # --- 2. Трейлинг стоп-лосс (после безубытка) ---
+        if self.breakeven_activated:
+            new_sl = self._calculate_trailing_sl()
+            if abs(new_sl - self.current_sl) > 0.01:
+                old_sl = self.current_sl
+                self.current_sl = new_sl
+                updates['trailing_sl'] = {
+                    'from': round(old_sl, 2),
+                    'to': round(new_sl, 2)
+                }
+                logger.info(f"🔺 Трейлинг SL: ${old_sl:.2f} → ${new_sl:.2f}")
+
+        # --- 3. Трейлинг тейк-профита (опционально) ---
+        if self.trail_tp_multiplier is not None and self.breakeven_activated:
+            new_tp = self._calculate_trailing_tp()
+            if abs(new_tp - self.current_tp) > 0.01:
+                old_tp = self.current_tp
+                self.current_tp = new_tp
+                updates['trailing_tp'] = {
+                    'from': round(old_tp, 2),
+                    'to': round(new_tp, 2)
+                }
+                logger.info(f"🎯 Трейлинг TP: ${old_tp:.2f} → ${new_tp:.2f}")
+
+        # --- 4. Обновляем на бирже ТОЛЬКО если изменения значительны ---
+        if updates or atr_changed:
+            # Проверяем, достаточно ли значителен сдвиг для отправки на биржу
+            if need_exchange_update or self._should_update_exchange(self.current_sl, self.current_tp):
+                self._update_on_exchange(self.current_sl, self.current_tp)
+                self._last_exchange_sl = self.current_sl
+                self._last_exchange_tp = self.current_tp
+                self._last_exchange_atr = self.atr
+                updates['exchange_updated'] = True
+            else:
+                logger.debug(f"⏸️ Изменения незначительны — пропускаем обновление на бирже")
+                updates['exchange_updated'] = False
+
+        return updates
+
+    def _calculate_trailing_sl(self) -> float:
+        """Рассчитать трейлинг стоп-лосс на основе best_price."""
+        trail_distance = self.atr * self.trail_sl_multiplier
+
+        if self.side == 'long':
+            # SL не может быть ниже entry (breakeven уже активирован)
+            new_sl = self.best_price - trail_distance
+            # SL может только подтягиваться вверх, не ниже текущего
+            return max(new_sl, self.current_sl, self.entry_price)
+        else:
+            new_sl = self.best_price + trail_distance
+            return min(new_sl, self.current_sl, self.entry_price)
+
+    def _calculate_trailing_tp(self) -> float:
+        """Рассчитать трейлинг тейк-профит."""
+        trail_distance = self.atr * self.trail_tp_multiplier
+
+        if self.side == 'long':
+            new_tp = self.best_price + trail_distance
+            return max(new_tp, self.current_tp)
+        else:
+            new_tp = self.best_price - trail_distance
+            return min(new_tp, self.current_tp)
+
+    def _update_on_exchange(self, sl_price: float, tp_price: float):
+        """
+        Обновить SL/TP на бирже через CCXT.
+
+        Использует create_order с amount=0, что позволяет Bybit
+        обновить TP/SL существующей позиции без изменения её размера.
+        """
+        try:
+            # Для long позиции TP/SL — это sell ордера, для short — buy
+            side = 'sell' if self.side == 'long' else 'buy'
+
+            self.exchange.create_order(
+                symbol=self.symbol,
+                type='market',
+                side=side,
+                amount=0,
+                params={
+                    'stopLossPrice': sl_price,
+                    'takeProfitPrice': tp_price,
+                    'positionIdx': 0,
+                    'reduceOnly': True,
+                }
+            )
+            logger.info(f"✅ SL/TP обновлены на бирже: SL=${sl_price:.2f}, TP=${tp_price:.2f}")
+
+        except AttributeError:
+            # Fallback: прямой API вызов Bybit
+            try:
+                params = {
+                    'symbol': self.symbol,
+                    'stopLoss': str(sl_price),
+                    'takeProfit': str(tp_price),
+                    'tpTriggerBy': 'LastPrice',
+                    'slTriggerBy': 'LastPrice',
+                    'positionIdx': 0,
+                }
+                self.exchange.privatePostV5PositionSetTradingStop(params)
+                logger.info(f"✅ SL/TP обновлены на бирже (direct): SL=${sl_price:.2f}, TP=${tp_price:.2f}")
+            except Exception as e2:
+                logger.error(f"❌ Ошибка обновления TP/SL (direct): {e2}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка обновления TP/SL на бирже: {e}")
+
+    def is_position_open(self) -> bool:
+        """
+        Проверить, открыта ли ещё позиция на бирже.
+
+        Returns:
+            bool: True если позиция открыта
+        """
+        try:
+            positions = self.exchange.fetch_positions([self.symbol])
+            for pos in positions:
+                if pos['symbol'] == self.symbol:
+                    size = float(pos.get('contracts', 0) or pos.get('size', 0))
+                    if size > 0:
+                        return True
+            return False
+        except Exception as e:
+            logger.error(f"❌ Ошибка проверки позиции: {e}")
+            return False
+
+    def get_status(self) -> Dict:
+        """
+        Получить текущий статус монитора.
+
+        Returns:
+            Dict: статус позиции
+        """
+        return {
+            'side': self.side,
+            'entry_price': self.entry_price,
+            'current_sl': self.current_sl,
+            'current_tp': self.current_tp,
+            'atr': self.atr,
+            'best_price': self.best_price,
+            'breakeven_activated': self.breakeven_activated,
+            'breakeven_threshold': self.breakeven_threshold,
         }

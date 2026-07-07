@@ -5,7 +5,8 @@ import time
 import traceback
 from log import logger
 from config import AnalysisConfig
-from run import create_mtf_analyzer, run_mtf_analysis  # print_mtf_result
+from run import create_mtf_analyzer, run_mtf_analysis
+from risk_manager import DynamicRiskManager, PositionMonitor
 
 
 def main():
@@ -22,11 +23,18 @@ def main():
     RISK_PERCENT = 2.0  # Риск на сделку в %
     TRADING_ENABLED = True  # Включить/выключить торговлю
 
+    # Параметры мониторинга позиции
+    BREAKEVEN_ATR_MULT = 1.5   # Активация безубытка при 1.5x ATR прибыли
+    TRAIL_SL_MULT = 1.5        # Трейлинг стопа на 1.5x ATR от best_price
+    TRAIL_TP_MULT = None       # Трейлинг TP отключён (None)
+
     logger.info("=" * 50)
     logger.info(f"🚀 Бот запущен (MTF режим + торговля): {SYMBOL}")
     logger.info(f"📊 Таймфреймы: {MTF_TIMEFRAMES}")
     logger.info(f"🕐 Интервал опроса: {SLEEP_SECONDS}с")
     logger.info(f"💰 Риск на сделку: {RISK_PERCENT}%")
+    logger.info(f"🔒 Breakeven: {BREAKEVEN_ATR_MULT}x ATR")
+    logger.info(f"🔺 Трейлинг SL: {TRAIL_SL_MULT}x ATR")
     logger.info("=" * 50)
 
     # Создаём анализатор
@@ -39,6 +47,9 @@ def main():
 
     # Для отслеживания последнего сигнала (чтобы не дублировать входы)
     last_direction = 'NEUTRAL'
+
+    # Монитор открытой позиции (None — позиции нет)
+    position_monitor = None
 
     try:
         while True:
@@ -57,8 +68,38 @@ def main():
                 # Финальный сигнал
                 final = analysis['final_signal']
 
-                # Торговая логика
-                if TRADING_ENABLED and final['trigger_trade']:
+                # --- МОНИТОРИНГ ОТКРЫТОЙ ПОЗИЦИИ ---
+                if position_monitor is not None:
+                    current_price = final.get('close', 0)
+                    new_atr = final.get('atr', None)
+
+                    if current_price > 0:
+                        logger.info(f"\n{'─' * 40}")
+                        logger.info(f"📡 Мониторинг позиции...")
+                        logger.info(f"   Цена: ${current_price:.2f}")
+                        logger.info(f"   Вход: ${position_monitor.entry_price:.2f}")
+                        logger.info(f"   SL:   ${position_monitor.current_sl:.2f}")
+                        logger.info(f"   TP:   ${position_monitor.current_tp:.2f}")
+                        logger.info(f"   BE:   {'✅' if position_monitor.breakeven_activated else '❌'}")
+
+                        # Обновляем SL/TP
+                        updates = position_monitor.update(current_price, new_atr)
+
+                        if updates:
+                            logger.info(f"📊 Обновления позиции: {updates}")
+
+                        # Проверяем, открыта ли ещё позиция
+                        if not position_monitor.is_position_open():
+                            logger.info("🔴 Позиция закрыта. Мониторинг остановлен.")
+                            position_monitor = None
+                            last_direction = 'NEUTRAL'
+                        else:
+                            logger.info(f"📡 Позиция активна, SL=${position_monitor.current_sl:.2f}")
+                    else:
+                        logger.warning("⚠️ Нет данных о текущей цене для мониторинга")
+
+                # --- ТОРГОВАЯ ЛОГИКА (только если нет открытой позиции) ---
+                if TRADING_ENABLED and final['trigger_trade'] and position_monitor is None:
                     current_direction = final['direction']
 
                     # Проверяем, не повторяем ли мы тот же сигнал
@@ -79,16 +120,38 @@ def main():
                             risk_percent=RISK_PERCENT
                         )
 
-                        if result:
+                        if result and result.get('order'):
                             last_direction = current_direction
                             logger.info(f"✅ Сделка исполнена: {current_direction}")
+
+                            # Создаём монитор позиции
+                            side = 'long' if current_direction == 'BULLISH' else 'short'
+                            entry_price = final.get('close', 0)
+                            atr = final.get('atr', 0)
+                            sl = result.get('stop_loss', 0)
+                            tp = result.get('take_profit', 0)
+
+                            if entry_price > 0 and atr > 0 and sl > 0 and tp > 0:
+                                position_monitor = PositionMonitor(
+                                    exchange=exchange,
+                                    symbol=SYMBOL,
+                                    side=side,
+                                    entry_price=entry_price,
+                                    initial_sl=sl,
+                                    initial_tp=tp,
+                                    atr=atr,
+                                    breakeven_activation_atr=BREAKEVEN_ATR_MULT,
+                                    trail_sl_multiplier=TRAIL_SL_MULT,
+                                    trail_tp_multiplier=TRAIL_TP_MULT
+                                )
+                                logger.info(f"📊 PositionMonitor запущен для {side} @ ${entry_price:.2f}")
                         else:
                             logger.error("❌ Ошибка исполнения сделки")
                     else:
                         logger.info(f"⏭️ Сигнал {current_direction} уже был обработан")
                 else:
-                    # Сбрасываем направление при отсутствии сигнала
-                    if last_direction != 'NEUTRAL':
+                    # Сбрасываем направление при отсутствии сигнала (если нет позиции)
+                    if last_direction != 'NEUTRAL' and position_monitor is None:
                         logger.info(f"🔄 Сигнал {last_direction} завершен")
                         last_direction = 'NEUTRAL'
 
@@ -103,7 +166,6 @@ def main():
 
                 # Если есть данные для TP/SL - выводим
                 if 'atr' in final and 'adx' in final:
-                    from risk_manager import DynamicRiskManager
                     risk_mgr = DynamicRiskManager(exchange, SYMBOL)
                     multipliers = risk_mgr.get_dynamic_multipliers(
                         atr=final['atr'],
