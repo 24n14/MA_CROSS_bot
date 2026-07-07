@@ -17,7 +17,7 @@ load_dotenv()
 NTFY_TOPIC = "ma_cross_24n14"
 
 # ── Прокси ──────────────────────────────────────────────
-USE_PROXY = True  # False - отключено, True - включено
+USE_PROXY = False  # False - отключено, True - включено
 
 PROXY_USER = os.getenv("PROXY_USER", "")
 PROXY_PASS = os.getenv("PROXY_PASS", "")
