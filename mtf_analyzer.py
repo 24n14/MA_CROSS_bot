@@ -1,6 +1,5 @@
 """
-Оптимизированный модуль мультитаймфреймового анализа с взвешенным консенсусом
-и защитой от рассинхронизации трендов.
+Оптимизированный модуль мультитаймфреймового анализа со взвешенным консенсусом.
 """
 import pandas as pd
 from typing import Dict, List, Optional
@@ -13,71 +12,41 @@ from log import logger
 
 class MultiTimeframeAnalyzer:
     """
-    Мультитаймфреймовый анализатор.
-    Математически агрегирует сигналы с учетом весов и жестко блокирует торговлю
-    в моменты рассинхронизации старших и младших периодов.
-
-    Оптимизация загрузки:
-    - При первом запуске загружает limit свечей для каждого ТФ
-    - В последующих циклах догружает только новые закрытые свечи
-    - Хранит кеш DataFrame'ов в self._cached_data
+    Мультитаймфреймовый анализатор со строгой фильтрацией по старшему тренду.
     """
-    # Веса таймфреймов берутся из config.TF_WEIGHTS
-    TF_WEIGHTS = TF_WEIGHTS
 
-    def __init__(self,
-                 timeframes: List[str] = None,
-                 exchange_name: str = 'bybit',
-                 symbol: str = 'BTC/USDT:USDT'):
-        """
-        Инициализация MTF анализатора.
-        """
-        self.timeframes = timeframes or ['5m', '15', '30m']
+    def __init__(self, timeframes: List[str] = None, exchange_name: str = 'bybit', symbol: str = 'BTC/USDT:USDT'):
+        # Исправляем возможные опечатки в конфигурации (например, '15' -> '15m')
+        raw_tfs = timeframes or ['5m', '15m', '30m']
+        self.timeframes = [tf if 'm' in tf.lower() or 'h' in tf.lower() or 'd' in tf.lower() else f"{tf}m" for tf in
+                           raw_tfs]
+
         self.symbol = symbol
         self.loader = ExchangeDataLoader(exchange_name, symbol=symbol)
+        self.TF_WEIGHTS = TF_WEIGHTS
+
         self.indicators = {
-            tf: AdvancedTrendSignalIndicator(Config.for_timeframe(tf))
-            for tf in self.timeframes
+            tf: AdvancedTrendSignalIndicator(Config.for_timeframe(tf)) for tf in self.timeframes
         }
-        # Кеш для хранения загруженных данных между циклами
         self._cached_data: Dict[str, Optional[pd.DataFrame]] = {}
 
     def load_and_analyze(self, limit: int = 500) -> Dict:
-        """
-        Загружает данные и проводит скоринговый MTF анализ.
-        При повторных вызовах догружает только новые свечи.
+        logger.info(f"\n{'=' * 30}\n🔍 MTF АНАЛИЗ (КОНСЕНСУС): {self.symbol}\n{'=' * 30}")
 
-        Args:
-            limit: максимальное количество свечей для хранения
-
-        Returns:
-            Словарь с результатами анализа
-        """
-        logger.info(f"\n{'=' * 30}")
-        logger.info(f" 📊 MTF АНАЛИЗ (КОНСЕНСУС): {self.symbol}")
-        logger.info(f"{'=' * 30}")
-
-        # Инкрементальная загрузка — догружаем только новые свечи
         data = self.loader.load_multiple_timeframes_incremental(
-            self.symbol,
-            timeframes=self.timeframes,
-            cached_data=self._cached_data,
-            limit=limit
+            self.symbol, timeframes=self.timeframes, cached_data=self._cached_data, limit=limit
         )
-
         if not data:
-            logger.info(" ❌ Не удалось загрузить данные с биржи")
-            return None
+            logger.error("❌ Не удалось загрузить исторические свечи с биржи")
+            return {}
 
-        # Сохраняем в кеш для следующего цикла
         self._cached_data = data
-
         results = {}
         mtf_summary = []
 
         for tf in self.timeframes:
-            if tf not in data:
-                logger.info(f" ⚠️ Нет данных для таймфрейма {tf}")
+            if tf not in data or data[tf].empty:
+                logger.warning(f"⚠️ Нет данных для обработки таймфрейма {tf}")
                 continue
 
             indicator = self.indicators[tf]
@@ -88,55 +57,27 @@ class MultiTimeframeAnalyzer:
             weight = self.TF_WEIGHTS.get(tf, 0.3)
 
             mtf_summary.append({
-                'timeframe': tf,
-                'signal': last['Signal'],
-                'strength': last['Signal_Strength'],
-                'trend': last['Trend_State'],
-                'angle': last['MA_Angle_Final'],
-                'divergence': last['Divergence'],
-                'close': last['close'],
-                'weight': weight,
-                'atr': last.get('ATR', 0),
-                'adx': last.get('ADX', 0)
+                'timeframe': tf, 'signal': last['Signal'], 'strength': last['Signal_Strength'],
+                'trend': last['Trend_State'], 'angle': last['MA_Angle_Final'],
+                'divergence': last['Divergence'], 'close': last['close'], 'weight': weight,
+                'atr': last.get('ATR', 0), 'adx': last.get('ADX', 0)
             })
 
-        # Вычисление финального математического консенсуса
         final_signal = self._calculate_final_signal(mtf_summary)
-
         return {
-            'symbol': self.symbol,
-            'timeframes': self.timeframes,
-            'timestamp': datetime.now(),
-            'mtf_details': mtf_summary,
-            'final_signal': final_signal,
-            'results': results
+            'symbol': self.symbol, 'timeframes': self.timeframes, 'timestamp': datetime.now(),
+            'mtf_details': mtf_summary, 'final_signal': final_signal, 'results': results
         }
 
     def _calculate_final_signal(self, summary: List[Dict]) -> Dict:
-        """
-        МАТЕМАТИЧЕСКИЙ СКОРИНГ КОНСЕНСУСА.
-        Исключает ложные входы по простому арифметическому большинству мелких ТФ.
-        Возвращает также ATR и ADX для расчета динамических SL/TP.
-
-        Пороги уверенности и минимальная сила берутся из config.AnalysisConfig.
-        """
-        # Загружаем пороги из конфигурации
         ac = AnalysisConfig()
-
         if not summary:
             return {
-                'direction': 'NEUTRAL',
-                'confidence': 'LOW',
-                'strength': 0,
-                'trigger_trade': False,
-                'atr': 0,
-                'adx': 0,
-                'close': 0
+                'direction': 'NEUTRAL', 'confidence': 'LOW', 'strength': 0,
+                'trigger_trade': False, 'atr': 0, 'adx': 0, 'close': 0
             }
 
         total_weight = sum(item['weight'] for item in summary)
-
-        # Считаем взвешенные голоса за каждое направление
         bullish_score = 0.0
         bearish_score = 0.0
         flat_score = 0.0
@@ -154,10 +95,8 @@ class MultiTimeframeAnalyzer:
             else:
                 flat_score += w
 
-        # Финальная средневзвешенная сила сигнала
         final_strength = weighted_strength_sum / total_weight if total_weight > 0 else 0.0
 
-        # Выделяем доминирующее взвешенное направление
         if bullish_score > bearish_score and bullish_score > flat_score:
             direction = 'BULLISH'
             agreement_pct = (bullish_score / total_weight) * 100
@@ -168,20 +107,33 @@ class MultiTimeframeAnalyzer:
             direction = 'NEUTRAL'
             agreement_pct = (flat_score / total_weight) * 100
 
-        # Находим самый старший (тяжелый) таймфрейм в пуле для фильтра структуры
-        senior_tf = max(summary, key=lambda x: x['weight'])
+        # --- ИСПРАВЛЕННЫЙ КОМПАРАТОР СТАРШЕГО ТАЙМФРЕЙМА ---
+        def tf_to_minutes(tf_str: str) -> int:
+            tf_str = tf_str.lower().strip()
+            if 'm' in tf_str: return int(tf_str.replace('m', ''))
+            if 'h' in tf_str: return int(tf_str.replace('h', '')) * 60
+            if 'd' in tf_str: return int(tf_str.replace('d', '')) * 1440
+            try:
+                return int(tf_str)
+            except ValueError:
+                return 0
+
+        # Поиск самого старшего ТФ строго по длине свечи, а не по искусственному весу
+        senior_tf = max(summary, key=lambda x: tf_to_minutes(x['timeframe']))
         senior_sig = str(senior_tf['signal']).upper()
 
-        # --- ЖЕСТКАЯ ЗАЩИТА ОТ РАССИНХРОНИЗАЦИИ ---
-        # Если итоговый вектор мелких ТФ идет против старшего тренда, блокируем вход
+        # --- СТРОГАЯ ЗАЩИТА ОТ РАССИНХРОНИЗАЦИИ С ТРЕНДОМ ---
         if direction == 'BULLISH' and ('BEARISH' in senior_sig or 'SIDEWAYS' in senior_sig):
+            logger.info(
+                f"🚫 Фильтр структуры: Мелкие ТФ смотрят в Лонг, но старший ТФ ({senior_tf['timeframe']}) в состоянии {senior_sig}. Вход заблокирован.")
             direction = 'NEUTRAL'
             agreement_pct = 50.0
         elif direction == 'BEARISH' and ('BULLISH' in senior_sig or 'SIDEWAYS' in senior_sig):
+            logger.info(
+                f"🚫 Фильтр структуры: Мелкие ТФ смотрят в Шорт, но старший ТФ ({senior_tf['timeframe']}) в состоянии {senior_sig}. Вход заблокирован.")
             direction = 'NEUTRAL'
             agreement_pct = 50.0
 
-        # Градация уверенности на основе % взвешенного согласия (из config)
         if agreement_pct >= ac.confidence_very_high:
             confidence = 'VERY HIGH'
         elif agreement_pct >= ac.confidence_high:
@@ -191,70 +143,38 @@ class MultiTimeframeAnalyzer:
         else:
             confidence = 'LOW'
 
-        # Разрешение на открытие рыночного ордера (из config)
         trigger_trade = False
         if direction != 'NEUTRAL' and confidence in ['HIGH', 'VERY HIGH']:
             if abs(final_strength) >= ac.min_strength_for_trade:
                 trigger_trade = True
 
-        # --- РАСЧЕТ ATR И ADX ДЛЯ ДИНАМИЧЕСКИХ SL/TP ---
+        # --- БЕЗОПАСНЫЙ РАСЧЕТ ATR И ADX НА ОСНОВЕ СРЕДНЕВЗВЕШЕННЫХ ДАННЫХ ---
         has_atr_adx = all('atr' in item and 'adx' in item for item in summary)
-
-        if has_atr_adx:
-            weighted_atr = sum(item['atr'] * item['weight'] for item in summary) / total_weight
-            weighted_adx = sum(item['adx'] * item['weight'] for item in summary) / total_weight
-
-            senior_atr = senior_tf.get('atr', weighted_atr)
-            senior_adx = senior_tf.get('adx', weighted_adx)
-
-            final_atr = senior_atr
-            final_adx = senior_adx
+        if has_atr_adx and total_weight > 0:
+            final_atr = sum(item['atr'] * item['weight'] for item in summary) / total_weight
+            final_adx = sum(item['adx'] * item['weight'] for item in summary) / total_weight
         else:
-            last_close = senior_tf.get('close', 0)
-            final_atr = last_close * 0.01
-            final_adx = 25.0
-            logger.warning("⚠️ ATR/ADX не найдены в данных, использую запасные значения")
+            # Резервные параметры от старшего ТФ
+            final_atr = senior_tf.get('atr', senior_tf.get('close', 60000) * 0.01)
+            final_adx = senior_tf.get('adx', 25.0)
 
         final_close = senior_tf.get('close', 0)
 
         return {
-            'direction': direction,
-            'confidence': confidence,
-            'strength': round(final_strength, 1),
-            'agreement': round(agreement_pct, 1),
-            'trigger_trade': trigger_trade,
-            'total_timeframes': len(summary),
-            'atr': round(final_atr, 2),
-            'adx': round(final_adx, 1),
+            'direction': direction, 'confidence': confidence, 'strength': round(final_strength, 1),
+            'agreement': round(agreement_pct, 1), 'trigger_trade': trigger_trade,
+            'total_timeframes': len(summary), 'atr': round(final_atr, 2), 'adx': round(final_adx, 1),
             'close': round(final_close, 2)
         }
 
     def print_analysis(self, analysis: Dict):
-        """
-        Красивый и информативный вывод скоринга в консоль.
-        """
-        if not analysis:
-            return
-
+        if not analysis: return
         final = analysis['final_signal']
         details = analysis['mtf_details']
 
-        logger.info(f"\n{'ТФ':>33} | {'Цена':>7} | {'Сигнал':} | {'Сила':} | {'Тренд':>5} | {'Вес':}")
-        logger.info("-" * 30)
+        logger.info(f"\n{'ТФ':>10} | {'Цена':>10} | {'Сигнал':>15} | {'Сила':>8} | {'Вес':>6}")
+        logger.info("-" * 60)
         for item in details:
             logger.info(
-                f"{item['timeframe']:} | ${item['close']:.2f} | {item['signal']:} | {item['strength']:.1f} | {item['trend']:} | {item['weight']:.2f}")
-
-        logger.info(f"\n{'=' * 30}")
-        logger.debug(f" 🎯 МАТЕМАТИЧЕСКИЙ СИНТЕЗ СИСТЕМЫ")
-        logger.debug(f"{'=' * 30}")
-
-        emoji = '🟢' if final['direction'] == 'BULLISH' else ('🔴' if final['direction'] == 'BEARISH' else '⚪')
-        logger.debug(f"Направление: {emoji} {final['direction']}")
-        logger.debug(f"Уверенность (Согласие): {final['confidence']} ({final['agreement']}%)")
-        logger.debug(f"Взвешенная Сила:  {final['strength']} / 100")
-        logger.debug(f"\n 💡 ПРИКАЗ ДЛЯ ИСПОЛНИТЕЛЬНОГО МОДУЛЯ:")
-        if final['trigger_trade']:
-            logger.warning(f" 🔥 [ВХОД РАЗРЕШЕН] Открывать позицию {final['direction']} с полным АТР риск-профилем.")
-        else:
-            logger.info("🛑[ТОРГ БЛОК] Нет консенсуса или флэт. Ожидание.")
+                f"{item['timeframe']:>10} | ${item['close']:>9.2f} | {item['signal']:>15} | {item['strength']:>8.1f} | {item['weight']:>6.2f}")
+        logger.info("-" * 60)

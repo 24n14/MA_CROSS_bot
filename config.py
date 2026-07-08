@@ -131,7 +131,7 @@ class AnalysisConfig:
     limit: int = 300                  # Количество загружаемых свечей
 
     # --- ТАЙМФРЕЙМЫ ---
-    mtf_timeframes: tuple = ('5m', '5m', '15m')  # Таймфреймы для MTF анализа
+    mtf_timeframes: tuple = ('5m', '15m', '30m')  # Таймфреймы для MTF анализа
 
     # --- ВЫВОД ---
     save_csv: bool = True             # Сохранять результаты в CSV
