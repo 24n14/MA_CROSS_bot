@@ -4,7 +4,7 @@
 - DynamicRiskManager: расчет и исполнение ордеров с адаптивными множителями
 - PositionMonitor: мониторинг и динамическое обновление SL/TP открытой позиции
 """
-import pandas as pd
+#  import pandas as pd
 import numpy as np
 from typing import Dict, Optional, Tuple
 from decimal import Decimal, ROUND_DOWN
