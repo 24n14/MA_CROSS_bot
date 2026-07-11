@@ -178,6 +178,12 @@ class AdvancedTrendSignalIndicator:
             df['MA_Angle'] = df['MA_Angle'].rolling(window=3).mean()
             df['EMA_Angle'] = df['EMA_Angle'].rolling(window=3).mean()
 
+        # ========== ОКРУГЛЕНИЕ ВСЕХ ЧИСЛОВЫХ КОЛОНОК ДО 2 ЗНАКОВ ==========
+        numeric_cols = ['ATR', 'ADX', 'MA', 'EMA', 'MA_Angle', 'EMA_Angle', 'Divergence']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = df[col].round(2)
+
         signals = []
         signal_strengths = []
         trend_states = []
@@ -246,6 +252,17 @@ class AdvancedTrendSignalIndicator:
         df['Trend_Confidence'] = df['Trend_State'].apply(
             lambda x: 0.7 if x in ('UP', 'DOWN') else 0.3
         )
+        # Округление колонок с сигналами (если они числовые)
+        if 'Signal_Strength' in df.columns:
+            df['Signal_Strength'] = df['Signal_Strength'].round(2)
+        if 'Trend_Confidence' in df.columns:
+            df['Trend_Confidence'] = df['Trend_Confidence'].round(2)
+
+        # Округление цены (опционально — до 1 знака, так как цены обычно целые)
+        for price_col in ['open', 'high', 'low', 'close']:
+            if price_col in df.columns:
+                df[price_col] = df[price_col].round(1)
+
         return df
 
     def _get_enhanced_signal(self, c: float, o: float, ma: float, ema: float,
