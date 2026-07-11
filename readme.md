@@ -367,12 +367,12 @@ loader = ExchangeDataLoader('bybit')
 
 **Назначение:** Расчёт динамических SL/TP на основе ATR и ADX, размещение ордеров.
 
-```python
-from risk_manager import DynamicRiskManager
+
+from DynamicRiskManager import DynamicRiskManager
 
 risk_mgr = DynamicRiskManager(exchange, 'BTC/USDT:USDT')
 sl, tp = risk_mgr.calculate_sl_tp(entry_price=64000, atr=136, adx=42, side='long')
-```
+
 
 Все множители и пороги берутся из **`RiskConfig`**.
 
@@ -382,7 +382,7 @@ sl, tp = risk_mgr.calculate_sl_tp(entry_price=64000, atr=136, adx=42, side='long
 
 **Назначение:** Мониторинг открытой позиции с автоматическим переводом в безубыток и трейлингом.
 
-```python
+
 from risk_manager import PositionMonitor
 
 monitor = PositionMonitor(
@@ -397,7 +397,7 @@ monitor = PositionMonitor(
 
 # В каждом цикле:
 updates = monitor.update(current_price=64500, new_atr=140)
-```
+
 
 **Логика работы:**
 1. Цена прошла ≥ 1.5× ATR в прибыль → SL переводится на цену входа (безубыток)
@@ -485,21 +485,19 @@ custom_weights['5m'] = 0.35
 custom_weights['15m'] = 0.35
 custom_weights['1h'] = 0.30
 ```
-
 ---
+Дополнительные улучшения:
+Механизм восстановления - при критических ошибках пересоздается анализатор
 
-## 🔧 Импорты
+Счетчик ошибок - предотвращает бесконечные циклы при ошибках
 
-```python
-from config import Config, AnalysisConfig, RiskConfig, TF_WEIGHTS
-from exchange import ExchangeDataLoader
-from indicator import AdvancedTrendSignalIndicator
-from mtf_analyzer import MultiTimeframeAnalyzer
-from risk_manager import DynamicRiskManager, PositionMonitor
-from run import run_mtf_analysis, print_mtf_result
-```
+Лучшая обработка None значений - все проверки на None и <= 0
 
----
+Логирование TRADING_ENABLED - видно, включена ли торговля
+
+Разделение логики - четкое разделение мониторинга и торговли
+
+Защита от дублирования - проверка current_direction != last_direction
 
 ## 📄 Лицензия
 

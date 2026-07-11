@@ -145,6 +145,18 @@ class AdvancedTrendSignalIndicator:
         """
         df = df.copy()
 
+        # Проверяем наличие необходимых колонок
+        required_cols = ['high', 'low', 'close', 'open']
+        if not all(col in df.columns for col in required_cols):
+            # Если open отсутствует, создаем его из close
+            if 'open' not in df.columns:
+                df['open'] = df['close']
+            # Если high/low отсутствуют
+            if 'high' not in df.columns:
+                df['high'] = df['close']
+            if 'low' not in df.columns:
+                df['low'] = df['close']
+
         # Инъекция математики волатильности и силы тренда
         df['ATR'] = ta.atr(df['high'], df['low'], df['close'], length=14)
         adx_data = ta.adx(df['high'], df['low'], df['close'], length=14)

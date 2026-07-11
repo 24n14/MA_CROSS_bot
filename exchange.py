@@ -13,7 +13,7 @@ from typing import Dict, Optional  # Tuple
 from datetime import datetime
 from log import logger
 import config
-from risk_manager import DynamicRiskManager
+from DynamicRiskManager import DynamicRiskManager
 
 
 class ExchangeDataLoader:
@@ -331,7 +331,7 @@ class ExchangeDataLoader:
         logger.info(f"📊 SL: ${sl_price:.2f} | TP: ${tp_price:.2f}")
         logger.info(f"{'=' * 30}")
 
-        result = risk_manager.place_limit_order(
+        result = risk_manager.place_market_order_with_tpsl(
             side=side,
             amount=position_size,
             price=close_price,
