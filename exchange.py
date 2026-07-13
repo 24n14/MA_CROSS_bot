@@ -14,6 +14,7 @@ from datetime import datetime
 from log import logger
 import config
 from DynamicRiskManager import DynamicRiskManager
+from open_pos import execute_trade
 
 
 class ExchangeDataLoader:
@@ -242,7 +243,7 @@ class ExchangeDataLoader:
             risk_percent: float = 2.0
     ) -> Optional[Dict]:
         """
-        Исполнение торгового сигнала с динамическим SL/TP.
+        Исполнение торгового сигнала с динамическим SL/TP через Pybit V5 API.
 
         Args:
             signal_data: данные сигнала (должны содержать direction, strength,
@@ -292,12 +293,12 @@ class ExchangeDataLoader:
         risk_manager = DynamicRiskManager(self.exchange, trade_symbol)
 
         # Рассчитываем SL/TP
-        side = 'buy' if direction == 'BULLISH' else 'sell'
+        side_direction = 'long' if direction == 'BULLISH' else 'short'
         sl_price, tp_price = risk_manager.calculate_sl_tp(
             entry_price=close_price,
             atr=atr,
             adx=adx,
-            side='long' if direction == 'BULLISH' else 'short'
+            side=side_direction
         )
 
         # Рассчитываем размер позиции
@@ -321,7 +322,7 @@ class ExchangeDataLoader:
             entry_price=close_price
         )
 
-        # Размещаем ордер
+        # Логирование параметров
         logger.info(f"\n{'=' * 30}")
         logger.info(f"🔥 ИСПОЛНЕНИЕ СИГНАЛА: {direction}")
         logger.info(f"💰 Баланс: ${usdt_balance:.2f}")
@@ -331,12 +332,23 @@ class ExchangeDataLoader:
         logger.info(f"📊 SL: ${sl_price:.2f} | TP: ${tp_price:.2f}")
         logger.info(f"{'=' * 30}")
 
-        result = risk_manager.place_market_order_with_tpsl(
-            side=side,
+        # Исполняем ордер через Pybit V5 API (open_pos.py)
+        order_result = execute_trade(
+            exchange=self.exchange,
+            symbol=trade_symbol,
+            side=side_direction,
             amount=position_size,
-            price=close_price,
+            entry_price=close_price,
             stop_loss_price=sl_price,
             take_profit_price=tp_price
         )
 
-        return result
+        if not order_result:
+            return None
+
+        # Возвращаем результат в формате, совместимом со start.py
+        return {
+            'order': order_result,
+            'stop_loss': sl_price,
+            'take_profit': tp_price
+        }
