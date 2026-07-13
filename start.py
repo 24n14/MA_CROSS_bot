@@ -104,15 +104,24 @@ def main():
 
                         try:
                             trade_side = 'sell' if position_monitor.side == 'long' else 'buy'
-                            # Срочно выходим по маркету
-                            emergency_order = exchange.create_order(
-                                symbol=SYMBOL,
-                                type='market',
-                                side=trade_side,
-                                amount=position_monitor.position_size,
-                                params={'reduceOnly': True}
+                            # Срочно выходим по маркету через Pybit (более надежно)
+                            from open_pos import session_bybit
+                            bybit_symbol = SYMBOL.replace('/', '').split(':')[0]
+                            close_side = 'Sell' if position_monitor.side == 'long' else 'Buy'
+                            
+                            emergency_order = session_bybit.place_order(
+                                category="linear",
+                                symbol=bybit_symbol,
+                                side=close_side,
+                                orderType="Market",
+                                qty=str(position_monitor.position_size),
+                                reduceOnly=True
                             )
-                            logger.critical(f"Позиция принудительно закрыта по рынку! ID ордера: {emergency_order['id']}. Депозит защищен.")
+                            
+                            if emergency_order.get("retCode") == 0:
+                                logger.critical(f"Позиция принудительно закрыта по рынку! ID ордера: {emergency_order['result']['orderId']}. Депозит защищен.")
+                            else:
+                                logger.critical(f"Ошибка экстренного закрытия: {emergency_order.get('retMsg')}")
 
                         except Exception as close_catastrophe:
                             logger.critical(f"КАТАСТРОФА: РОБОТ НЕ СМОГ ЗАКРЫТЬ ПОЗИЦИЮ ДАЖЕ ПО РЫНКУ: {close_catastrophe}")
@@ -151,7 +160,7 @@ def main():
                                 'symbol': SYMBOL
                             }
 
-                            # Исполнение сигнала
+                            # Исполнение сигнала (теперь использует Pybit V5 API через open_pos.py)
                             result = mtf_analyzer.loader.execute_trade_signal(
                                 signal_data=signal_data,
                                 risk_percent=RISK_PERCENT
@@ -176,18 +185,17 @@ def main():
                                 if (entry_price > 0 and atr > 0 and sl > 0 and
                                     tp > 0 and executed_amount > 0):
 
-                                    # Исправлено: добавлена запятая между параметрами
                                     position_monitor = PositionMonitor(
                                         exchange=exchange,
                                         symbol=SYMBOL,
                                         side=side,
                                         entry_price=entry_price,
-                                        position_size=executed_amount,  # Добавлен обязательный параметр
+                                        position_size=executed_amount,
                                         atr=atr,
                                         initial_sl=sl,
                                         initial_tp=tp,
                                         breakeven_activation_atr=BREAKEVEN_ATR_MULT,
-                                        trail_sl_multiplier=TRAIL_SL_MULT,  # Исправлено: было TRAIL_TP_MULT
+                                        trail_sl_multiplier=TRAIL_SL_MULT,
                                         trail_tp_multiplier=TRAIL_TP_MULT
                                     )
                                     logger.info(f"Мониторинг позиции {side} успешно запущен.")
