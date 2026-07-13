@@ -1,4 +1,3 @@
-import time
 import numpy as np
 from typing import Dict, Optional, Tuple
 from decimal import Decimal, ROUND_DOWN
@@ -10,6 +9,7 @@ import config as cfg
 class DynamicRiskManager:
     """
     Менеджер риска с динамическим расчетом стоп-лосса и тейк-профита на основе ATR и ADX.
+    Отвечает ТОЛЬКО за расчеты, создание ордеров находится в open_pos.py
     """
 
     def __init__(self, exchange: ccxt.Exchange, symbol: str):
@@ -115,94 +115,6 @@ class DynamicRiskManager:
 
         logger.debug(f"Размер позиции: {position_size:.6f} (риск {risk_percent}% = ${max_risk_amount:.2f})")
         return position_size
-
-    def place_market_order_with_tpsl(
-        self,
-        side: str,
-        amount: float,
-        entry_price: float,
-        stop_loss_price: float,
-        take_profit_price: float
-    ) -> Dict:
-        """
-        Размещение рыночного ордера с установкой SL и TP.
-        """
-        try:
-            # Проверяем, есть ли уже открытая позиция
-            if self.is_position_open():
-                logger.warning("Позиция уже открыта, отмена размещения ордера")
-                return {}
-
-            # Округляем цены
-            stop_loss_price = self._adjust_price(stop_loss_price)
-            take_profit_price = self._adjust_price(take_profit_price)
-            amount = self._adjust_amount(amount)
-
-            # Размещаем рыночный ордер с SL/TP
-            order = self.exchange.create_order(
-                self.symbol,
-                'market',
-                side,
-                amount,
-                params={
-                    'stopLoss': {
-                        'triggerPrice': stop_loss_price,
-                        'slSize': amount
-                    },
-                    'takeProfit': {
-                        'triggerPrice': take_profit_price,
-                        'tpSize': amount
-                    },
-                    'tpslMode': 'Partial',
-                    'tpOrderType': 'Market',
-                    'slOrderType': 'Market'
-                }
-            )
-
-            # Ждем немного, чтобы позиция успела открыться
-            time.sleep(1)
-
-            # Проверяем успешность открытия позиции
-            if self.is_position_open():
-                logger.info(f"Позиция успешно открыта! ID: {order['id']}")
-                logger.info(f"{side.upper()} {amount} {self.symbol} @ {entry_price:.2f}")
-                return order
-            else:
-                logger.error("Ошибка: позиция не открылась после размещения ордера")
-                return {}
-
-        except Exception as e:
-            logger.error(f"Ошибка при размещении ордера: {e}")
-            return {}
-
-    def _place_oco_orders(self, main_order_id: str, side: str, amount: float,
-                          stop_loss: float, take_profit: float):
-        """
-        Размещение OCO ордеров (альтернативный метод).
-        """
-        try:
-            sl_order = self.exchange.create_order(
-                symbol=self.symbol,
-                type='stop',
-                side=side,
-                amount=amount,
-                price=stop_loss,
-                params={'stopPrice': stop_loss, 'reduceOnly': True}
-            )
-            logger.info(f"Stop Loss ордер размещен: ID {sl_order['id']}")
-
-            tp_order = self.exchange.create_order(
-                symbol=self.symbol,
-                type='limit',
-                side=side,
-                amount=amount,
-                price=take_profit,
-                params={'reduceOnly': True}
-            )
-            logger.info(f"Take Profit ордер размещен: ID {tp_order['id']}")
-
-        except Exception as e:
-            logger.error(f"Ошибка размещения OCO ордеров: {e}")
 
     def _adjust_amount(self, amount: float) -> float:
         """
