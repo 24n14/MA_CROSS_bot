@@ -6,7 +6,7 @@
 - RiskConfig: конфигурация риск-менеджмента
 """
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass  # ,field
 from typing import Dict, Optional
 from dotenv import load_dotenv
 
@@ -147,7 +147,7 @@ class AnalysisConfig:
     # ПАРАМЕТРЫ РИСКА
     # =========================================================================
     risk_percent: float = 2.0         # Риск на сделку в % от депозита
-    min_signal_strength: float = 30.0 # Минимальная сила сигнала для входа (0-100)
+    min_signal_strength: float = 30.0  # Минимальная сила сигнала для входа (0-100)
 
     # =========================================================================
     # ПАРАМЕТРЫ МОНИТОРИНГА ПОЗИЦИИ (PositionMonitor)
@@ -178,8 +178,8 @@ class RiskConfig:
     # =========================================================================
     # БАЗОВЫЕ МНОЖИТЕЛИ SL/TP
     # =========================================================================
-    base_sl_multiplier: float = 1.5   # Базовый множитель стоп-лосса (SL = ATR × multiplier)
-    base_tp_multiplier: float = 1.5   # Базовый множитель тейк-профита
+    base_sl_multiplier: float = 3   # Базовый множитель стоп-лосса (SL = ATR × multiplier)
+    base_tp_multiplier: float = 3   # Базовый множитель тейк-профита
 
     # =========================================================================
     # ПОРОГИ ADX ДЛЯ МНОЖИТЕЛЕЙ TP
