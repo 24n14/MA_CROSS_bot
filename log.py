@@ -112,7 +112,7 @@ logger.add(
     log_file,
     format="{time:YYYY-MM-DD HH:mm:ss}|{level}|{name}|{message}",
     level="DEBUG",
-    rotation="10 MB",
+    rotation="1 MB",
     retention="7 days",
     encoding="utf-8"
 )
