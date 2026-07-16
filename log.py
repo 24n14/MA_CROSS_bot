@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Ntfy ────────────────────────────────────────────────
-NTFY_TOPIC = "ma_cross_24n14"
+NTFY_TOPIC = "github_24n14_ma_cross"
 
 # ── Прокси ──────────────────────────────────────────────
 USE_PROXY = False  # False - отключено, True - включено
