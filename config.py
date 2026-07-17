@@ -204,3 +204,5 @@ class RiskConfig:
     trail_tp_multiplier: Optional[float] = None  # Множитель ATR для трейлинга TP (None = откл)
     min_update_distance_atr: float = 0.5   # Мин. сдвиг SL/TP (в долях ATR) для отправки на биржу
     min_atr_change_pct: float = 15.0       # Мин. изменение ATR в % для пересчёта
+    MIN_AMOUNT: float = 0.001  # Минимальный объём для BTC/USDT на Bybit
+    min_amount: float = 0.001  # Минимальный объем
