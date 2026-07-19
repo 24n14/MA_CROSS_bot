@@ -75,10 +75,7 @@ class MultiTimeframeAnalyzer:
 
         for tf in self.timeframes:
             limit = self._candles_limit(tf)
-            if hasattr(self.loader, "fetch_ohlcv"):
-                df = self.loader.fetch_ohlcv(symbol=self.symbol, timeframe=tf, limit=limit)
-            else:
-                df = self.loader.get_ohlcv(timeframe=tf, limit=limit)
+            df = self.loader.fetch_ohlcv(symbol=self.symbol, timeframe=tf, limit=limit)
             if df is not None and len(df) > 0:
                 self._data[tf] = df
         return self._data
@@ -286,7 +283,7 @@ class MultiTimeframeAnalyzer:
         }
 
     def run(self) -> Dict[str, Any]:
-        """Полный цикл: загрузка → анализ ТФ → агре gated."""
+        """Полный цикл: загрузка → анализ ТФ → агрегация."""
         self.load_data()
         self.analyze_all()
         return self.aggregate()
