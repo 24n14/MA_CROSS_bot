@@ -31,11 +31,13 @@ class MultiTimeframeAnalyzer:
         self.timeframes: List[str] = list(
             timeframes or getattr(self.analysis_config, "timeframes", list(TF_WEIGHTS.keys()))
         )
+        # AnalysisConfig использует поле "exchange", а не "exchange_name"
         self.exchange_name = exchange_name or getattr(
-            self.analysis_config, "exchange_name", getattr(Config, "EXCHANGE_NAME", "binance")
+            self.analysis_config, "exchange",
+            getattr(self.analysis_config, "exchange_name", "bybit")
         )
         self.symbol = symbol or getattr(
-            self.analysis_config, "symbol", getattr(Config, "SYMBOL", "BTC/USDT")
+            self.analysis_config, "symbol", "BTC/USDT:USDT"
         )
         self.tf_weights: Dict[str, float] = dict(TF_WEIGHTS)
         self.loader = ExchangeDataLoader(

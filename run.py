@@ -10,10 +10,6 @@ from mtf_analyzer import MultiTimeframeAnalyzer
 from mtf_analyzer import create_mtf_analyzer as _create_mtf_analyzer
 from mtf_analyzer import run_mtf_analysis as _run_mtf_analysis
 
-acfg = AnalysisConfig()
-analyzer = _create_mtf_analyzer(analysis_config=acfg)
-result = analyzer.analyze_all()
-
 CSV_DIR = "csv_history"
 
 
