@@ -57,7 +57,8 @@ class ExchangeDataLoader:
         })
 
         if config.DEMO_TRADING:
-            self.exchange.urls['api'] = self.exchange.urls['demotrading']
+            # Демо-режим уже включён через enableDemoTrading в options,
+            # ccxt автоматически использует тестовые URL биржи
             result = self.exchange.privateGetV5UserQueryApi()
             uid = result['result']['userID']
             logger.info(f"🧪 ДЕМО-РЕЖИМ АКТИВИРОВАН UID {uid}")

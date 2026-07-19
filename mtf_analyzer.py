@@ -59,10 +59,13 @@ class MultiTimeframeAnalyzer:
     def load_data(self) -> Dict[str, pd.DataFrame]:
         """Загрузка OHLCV по всем таймфреймам."""
         self._data = {}
+        limit = getattr(self.analysis_config, "candles_limit",
+                        getattr(self.analysis_config, "limit", 500))
         if hasattr(self.loader, "load_multiple_timeframes"):
             raw = self.loader.load_multiple_timeframes(
-                self.timeframes,
-                limit=getattr(self.analysis_config, "candles_limit", None),
+                symbol=self.symbol,
+                timeframes=tuple(self.timeframes),
+                limit=limit,
             )
             if isinstance(raw, dict):
                 self._data = raw
@@ -71,7 +74,7 @@ class MultiTimeframeAnalyzer:
         for tf in self.timeframes:
             limit = self._candles_limit(tf)
             if hasattr(self.loader, "fetch_ohlcv"):
-                df = self.loader.fetch_ohlcv(timeframe=tf, limit=limit)
+                df = self.loader.fetch_ohlcv(symbol=self.symbol, timeframe=tf, limit=limit)
             else:
                 df = self.loader.get_ohlcv(timeframe=tf, limit=limit)
             if df is not None and len(df) > 0:
@@ -95,38 +98,36 @@ class MultiTimeframeAnalyzer:
             }
 
         last = out.iloc[-1]
-        # гибкий разбор колонок сигнала
-        signal_val = 0
-        for col in ("signal", "Signal", "trade_signal", "final_signal"):
-            if col in out.columns and pd.notna(last.get(col)):
-                try:
-                    signal_val = int(last[col])
-                except (TypeError, ValueError):
-                    signal_val = 0
-                break
 
-        if signal_val > 0:
+        # --- Парсинг сигнала из строковой колонки "Signal" ---
+        signal_str = str(last.get("Signal", "NEUTRAL")).upper()
+        if "STRONG BULLISH" in signal_str or "BULLISH" in signal_str:
+            signal_val = 1
             direction = "long"
-        elif signal_val < 0:
+        elif "STRONG BEARISH" in signal_str or "BEARISH" in signal_str:
+            signal_val = -1
             direction = "short"
         else:
+            signal_val = 0
             direction = "neutral"
 
+        # --- Сила сигнала из "Signal_Strength" ---
         strength = 0.0
-        for col in ("strength", "signal_strength", "confidence", "score"):
-            if col in out.columns and pd.notna(last.get(col)):
-                try:
-                    strength = float(last[col])
-                except (TypeError, ValueError):
-                    strength = 0.0
-                break
+        if "Signal_Strength" in out.columns and pd.notna(last.get("Signal_Strength")):
+            try:
+                strength = float(last["Signal_Strength"])
+            except (TypeError, ValueError):
+                strength = 0.0
 
+        # --- close ---
         close = float(last["close"]) if "close" in out.columns else float("nan")
 
+        # --- Дополнительные метрики ---
         extras: Dict[str, Any] = {}
-        for col in ("rsi", "RSI", "adx", "ADX", "ma_trend", "ema_trend", "atr", "ATR"):
+        for col in ("ATR", "ADX", "MA", "EMA", "MA_Angle", "EMA_Angle",
+                    "Divergence", "Trend_State", "Trend_Confidence", "Raw_Direction"):
             if col in out.columns and pd.notna(last.get(col)):
-                extras[col] = last[col]
+                extras[col.lower()] = last[col]
 
         return {
             "timeframe": tf,
@@ -226,9 +227,9 @@ class MultiTimeframeAnalyzer:
                 sig = 0
 
             # вклад: знак сигнала * сила * вес
-            contrib = float(sig) * max(strength, 1.0) * w if sig != 0 else 0.0
+            contrib = float(sig) * max(abs(strength), 1.0) * w if sig != 0 else 0.0
             if sig == 0 and direction in ("long", "short") and aligned:
-                contrib = (1.0 if direction == "long" else -1.0) * max(strength, 0.0) * w
+                contrib = (1.0 if direction == "long" else -1.0) * max(abs(strength), 0.0) * w
 
             weighted += contrib
             total_w += w

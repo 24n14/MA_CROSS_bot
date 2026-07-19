@@ -7,30 +7,27 @@ from typing import Dict, Optional
 from config import AnalysisConfig
 from log import logger
 from mtf_analyzer import MultiTimeframeAnalyzer
-from mtf_analyzer import create_mtf_analyzer
+from mtf_analyzer import create_mtf_analyzer as _create_mtf_analyzer
+from mtf_analyzer import run_mtf_analysis as _run_mtf_analysis
 
 acfg = AnalysisConfig()
-analyzer = create_mtf_analyzer(analysis_config=acfg)
+analyzer = _create_mtf_analyzer(analysis_config=acfg)
 result = analyzer.analyze_all()
 
 CSV_DIR = "csv_history"
 
+
 def _ensure_csv_dir() -> None:
     os.makedirs(CSV_DIR, exist_ok=True)
+
 
 def create_mtf_analyzer(analysis_config: AnalysisConfig) -> MultiTimeframeAnalyzer:
     """
     Создание MTF-анализатора.
-    ВАЖНО: без cfg= — конструктор ждёт timeframes / exchange_name / symbol.
+    Использует фабрику из mtf_analyzer.py, передавая analysis_config.
     """
-    exchange = getattr(analysis_config, "exchange", None) or getattr(
-        analysis_config, "exchange_name", "bybit"
-    )
-    return MultiTimeframeAnalyzer(
-        timeframes=list(analysis_config.mtf_timeframes),
-        exchange_name=exchange,
-        symbol=analysis_config.symbol,
-    )
+    return _create_mtf_analyzer(analysis_config=analysis_config)
+
 
 def run_mtf_analysis(
     analysis_config: AnalysisConfig,
@@ -41,19 +38,23 @@ def run_mtf_analysis(
     else:
         mtf = mtf_analyzer
 
-    limit = getattr(analysis_config, "limit", getattr(analysis_config, "analysis_limit", 500))
-    analysis = mtf.load_and_analyze(limit=limit)
+    # Загружаем данные, анализируем все ТФ и агрегируем результат
+    mtf.load_data()
+    mtf.analyze_all()
+    analysis = mtf.aggregate()
 
     if analysis and getattr(analysis_config, "save_csv", False):
         _ensure_csv_dir()
         safe_symbol = analysis_config.symbol.replace("/", "_")
-        for tf, result in analysis.get("results", {}).items():
+        # Сохраняем сырые данные индикаторов по каждому ТФ
+        for tf, df in mtf._data.items():
             filename = f"MTF_{safe_symbol}_{tf}_signals.csv"
             output_file = os.path.join(CSV_DIR, filename)
-            result.to_csv(output_file)
+            df.to_csv(output_file)
             logger.debug(f"Сохранено: {output_file}")
 
     return {"analyzer": mtf, "analysis": analysis}
+
 
 def print_mtf_result(mtf_data: Dict, analysis_config: AnalysisConfig) -> None:
     if not mtf_data or not getattr(analysis_config, "verbose", True):

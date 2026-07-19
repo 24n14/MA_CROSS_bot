@@ -12,6 +12,13 @@ from PositionMonitor import PositionMonitor
 from open_pos import emergency_close_position, pybit_session, execute_trade
 
 
+def _extract_tf_value(timeframes, key: str, default=0):
+    """Извлечение значения из старшего (первого) ТФ."""
+    if timeframes and len(timeframes) > 0:
+        return timeframes[0].get(key, default)
+    return default
+
+
 def main():
     """Главный цикл торгового бота"""
 
@@ -96,22 +103,43 @@ def main():
 
                 # === 2. ПАРСИНГ РЕЗУЛЬТАТОВ АНАЛИЗА ===
                 analysis = analysis_data['analysis']
-                mtf = analysis_data['analyzer']
-                mtf.print_analysis(analysis)
 
-                final = analysis.get('final_signal', {})
+                # Новая структура из mtf_analyzer.aggregate():
+                # {
+                #   "symbol", "exchange", "timestamp",
+                #   "higher_tf_bias": "long"/"short"/"neutral",
+                #   "final_signal": -1/0/1,
+                #   "final_direction": "long"/"short"/"neutral",
+                #   "score": float,
+                #   "confidence": float,
+                #   "timeframes": [{...}, ...]
+                # }
+                timeframes = analysis.get('timeframes', [])
+                final_signal = analysis.get('final_signal', 0)
+                final_direction = analysis.get('final_direction', 'neutral')
+                score = analysis.get('score', 0.0)
+                confidence = analysis.get('confidence', 0.0)
+                higher_tf_bias = analysis.get('higher_tf_bias', 'neutral')
 
-                if not final:
-                    logger.error("❌ Нет финального сигнала")
-                    time.sleep(SLEEP_SECONDS)
-                    continue
+                # Извлекаем close, atr, adx из старшего ТФ
+                current_price = _extract_tf_value(timeframes, 'close', 0)
+                current_atr = _extract_tf_value(timeframes, 'atr', 0)
+                current_adx = _extract_tf_value(timeframes, 'adx', 0)
 
-                current_price = final.get('close', 0)
-                current_atr = final.get('atr', 0)
-                current_direction = final.get('direction', 'NEUTRAL')
-                trigger_trade = final.get('trigger_trade', False)
-                strength = final.get('strength', 0)
-                adx = final.get('adx', 0)
+                # Маппинг направления
+                if final_direction == 'long':
+                    current_direction = 'BULLISH'
+                elif final_direction == 'short':
+                    current_direction = 'BEARISH'
+                else:
+                    current_direction = 'NEUTRAL'
+
+                trigger_trade = (
+                    final_signal != 0
+                    and abs(score) >= cfg.min_signal_strength / 100.0
+                    and confidence >= 0.3
+                )
+                strength = abs(score) * 100.0
 
                 # Сохраняем для использования в мониторинге
                 last_price = current_price
@@ -124,10 +152,12 @@ def main():
 
                 logger.info(f"📊 Текущая цена: ${current_price:.2f}")
                 logger.info(f"📊 ATR: ${current_atr:.2f}")
-                logger.info(f"📊 ADX: {adx:.1f}")
+                logger.info(f"📊 ADX: {current_adx:.1f}")
                 logger.info(f"📊 Направление: {current_direction}")
-                logger.info(f"📊 Сила сигнала: {strength}")
+                logger.info(f"📊 Сила сигнала: {strength:.1f}")
                 logger.info(f"📊 Сигнал на вход: {trigger_trade}")
+                logger.info(f"📊 Старший ТФ: {higher_tf_bias}")
+                logger.info(f"📊 Уверенность: {confidence:.2f}")
 
                 # === 3. МОНИТОРИНГ ОТКРЫТОЙ ПОЗИЦИИ ===
                 if position_monitor is not None:
@@ -232,7 +262,7 @@ def main():
                                 side = 'long' if current_direction == 'BULLISH' else 'short'
 
                                 # Получаем динамические множители
-                                multipliers = risk_manager.get_dynamic_multipliers(current_atr, adx)
+                                multipliers = risk_manager.get_dynamic_multipliers(current_atr, current_adx)
                                 logger.info(f"📊 Динамические множители:")
                                 logger.info(f"   Тренд: {multipliers['trend_state']}")
                                 logger.info(f"   SL множитель: {multipliers['sl_multiplier']}x")
@@ -243,7 +273,7 @@ def main():
                                 stop_loss_price, take_profit_price = risk_manager.calculate_sl_tp(
                                     entry_price=current_price,
                                     atr=current_atr,
-                                    adx=adx,
+                                    adx=current_adx,
                                     side=side
                                 )
 
@@ -354,7 +384,7 @@ def main():
                 error_count += 1
 
                 if error_count >= max_errors:
-                    logger.critical(f"⚠️ Критическое количество ошибок ({max_errors}). Перезапуск цикла...")
+                    logger.critical(f"⚠️ Критическое количество ошибок ({max_errors}). Перезапус�� цикла...")
                     error_count = 0
                     try:
                         logger.info("🔄 Пересоздание анализатора и риск-менеджера...")
