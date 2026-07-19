@@ -1,124 +1,116 @@
-"""
-Модуль функций запуска и вывода результатов.
+"""Модуль функций запуска и вывода результатов."""
+from __future__ import annotations
 
-Содержит функции:
-- run_single_analysis: запуск одиночного анализа
-- run_mtf_analysis: запуск MTF анализа
-- print_single_result: вывод одиночного результата
-- print_comparison: сравнение MTF и Single
-"""
 import os
 from typing import Dict, Optional
-from log import logger
+
 from config import AnalysisConfig
+from log import logger
 from mtf_analyzer import MultiTimeframeAnalyzer
+from mtf_analyzer import create_mtf_analyzer
 
+acfg = AnalysisConfig()
+analyzer = create_mtf_analyzer(analysis_config=acfg)
+result = analyzer.analyze_all()
 
-# Папка для сохранения CSV
-CSV_DIR = 'csv_history'
+CSV_DIR = "csv_history"
 
-
-def _ensure_csv_dir():
-    """Создать папку csv_history если её нет"""
+def _ensure_csv_dir() -> None:
     os.makedirs(CSV_DIR, exist_ok=True)
-
 
 def create_mtf_analyzer(analysis_config: AnalysisConfig) -> MultiTimeframeAnalyzer:
     """
-    Создание MTF анализатора (один раз при старте).
-
-    Args:
-        analysis_config: конфигурация режимов
-
-    Returns:
-        Экземпляр MultiTimeframeAnalyzer
+    Создание MTF-анализатора.
+    ВАЖНО: без cfg= — конструктор ждёт timeframes / exchange_name / symbol.
     """
+    exchange = getattr(analysis_config, "exchange", None) or getattr(
+        analysis_config, "exchange_name", "bybit"
+    )
     return MultiTimeframeAnalyzer(
         timeframes=list(analysis_config.mtf_timeframes),
-        exchange_name=analysis_config.exchange,
-        symbol=analysis_config.symbol
+        exchange_name=exchange,
+        symbol=analysis_config.symbol,
     )
 
-
-def run_mtf_analysis(analysis_config: AnalysisConfig,
-                     mtf_analyzer: Optional[MultiTimeframeAnalyzer] = None) -> Dict:
-    """
-    Запуск мультитаймфреймового анализа.
-    При повторных вызовах с тем же анализатором догружает только новые свечи.
-
-    Args:
-        analysis_config: конфигурация режимов
-        mtf_analyzer: существующий анализатор (если None — создаётся новый)
-
-    Returns:
-        Словарь с анализатором и результатами
-    """
+def run_mtf_analysis(
+    analysis_config: AnalysisConfig,
+    mtf_analyzer: Optional[MultiTimeframeAnalyzer] = None,
+) -> Dict:
     if mtf_analyzer is None:
         mtf = create_mtf_analyzer(analysis_config)
     else:
         mtf = mtf_analyzer
 
-    analysis = mtf.load_and_analyze(limit=analysis_config.limit)
+    limit = getattr(analysis_config, "limit", getattr(analysis_config, "analysis_limit", 500))
+    analysis = mtf.load_and_analyze(limit=limit)
 
-    if analysis and analysis_config.save_csv:
+    if analysis and getattr(analysis_config, "save_csv", False):
         _ensure_csv_dir()
-        safe_symbol = analysis_config.symbol.replace('/', '_')
-        for tf, result in analysis['results'].items():
+        safe_symbol = analysis_config.symbol.replace("/", "_")
+        for tf, result in analysis.get("results", {}).items():
             filename = f"MTF_{safe_symbol}_{tf}_signals.csv"
             output_file = os.path.join(CSV_DIR, filename)
             result.to_csv(output_file)
-            logger.debug(f"💾 Сохранено: {output_file}")
+            logger.debug(f"Сохранено: {output_file}")
 
-    return {
-        'analyzer': mtf,
-        'analysis': analysis
-    }
+    return {"analyzer": mtf, "analysis": analysis}
 
-
-def print_mtf_result(mtf_data: Dict, analysis_config: AnalysisConfig):
-    """
-    Вывод результатов MTF анализа.
-
-    Args:
-        mtf_data: результат run_mtf_analysis()
-        analysis_config: конфигурация режимов
-    """
-    if not mtf_data or not analysis_config.verbose:
+def print_mtf_result(mtf_data: Dict, analysis_config: AnalysisConfig) -> None:
+    if not mtf_data or not getattr(analysis_config, "verbose", True):
         return
 
-    analysis = mtf_data['analysis']
-    final = analysis['final_signal']
-    details = analysis['mtf_details']
+    analysis = mtf_data.get("analysis") or {}
+    if not analysis:
+        logger.warning("Нет analysis в mtf_data")
+        return
+
+    final = analysis.get("final_signal") or {}
+    details = analysis.get("mtf_details") or []
+    results = analysis.get("results") or {}
 
     logger.info(f"\n{'=' * 30}")
-    logger.info(f"📊 МТФ АНАЛИЗ: {analysis_config.symbol}")
+    logger.info(f"МТФ АНАЛИЗ: {analysis_config.symbol}")
     logger.info(f"{'=' * 30}")
 
-    emoji = '🟢' if final['direction'] == 'BULLISH' else '🔴' if final['direction'] == 'BEARISH' else '⚪'
-    logger.info(f"{emoji} Направление: {final['direction']}")
-    logger.info(f"💪 Сила: {final['strength']:.1f}")
-    logger.info(f"🎯 Уверенность: {final['confidence']}")
-    logger.info(f"📊 Согласие ТФ: {final['agreement']}%")
+    direction = final.get("direction", "NEUTRAL")
+    if direction == "BULLISH":
+        emoji = "[BULL]"
+    elif direction == "BEARISH":
+        emoji = "[BEAR]"
+    else:
+        emoji = "[FLAT]"
 
-    logger.info(f"\n{'─' * 30}")
-    logger.info(f"{'Таймфрейм':} {'Сигнал':} {'Цена':}")
-    logger.info(f"{'─' * 30}")
+    logger.info(f"{emoji} Направление: {direction}")
+    logger.info(f"Сила: {float(final.get('strength', 0) or 0):.1f}")
+    logger.info(f"Уверенность: {final.get('confidence', 'LOW')}")
+    logger.info(f"Согласие ТФ: {float(final.get('agreement', 0) or 0)}%")
+    logger.info(f"\n{'─' * 40}")
+    logger.info(f"{'Таймфрейм':<12} {'Сигнал':<20} {'Цена':>12}")
+    logger.info(f"{'─' * 40}")
 
     for item in details:
-        tf = item['timeframe']
-        signal = item['signal']
-        close = item['close']
-        logger.info(f"{tf:} {signal:} ${close:.2f}")
+        tf = item.get("timeframe", "?")
+        signal = str(item.get("signal", "NEUTRAL"))
+        close = float(item.get("close", 0) or 0)
+        logger.info(f"{tf:<12} {signal:<20} ${close:>10.2f}")
 
-        # Подробные данные по индикаторам для каждого таймфрейма
-        result_df = analysis['results'][tf]
-        last = result_df.iloc[-1]
+        # детали индикаторов — внутри цикла
+        if tf in results:
+            result_df = results[tf]
+            if result_df is not None and len(result_df) > 0:
+                last = result_df.iloc[-1]
+                ma_angle = float(last.get("MA_Angle_Final", 0.0) or 0.0)
+                adx = float(last.get("ADX", 0.0) or 0.0)
+                atr = float(last.get("ATR", 0.0) or 0.0)
+                ma = float(last.get("MA", close) or close)
+                ema = float(last.get("EMA", close) or close)
+                logger.info(
+                    f"  Угол MA: {ma_angle:+.1f}° | ADX: {adx:.1f} | ATR: ${atr:.2f}"
+                )
+                logger.info(f"  MA: ${ma:.2f} | EMA: ${ema:.2f}")
 
-        ma_angle = last.get('MA_Angle_Final', 0.0)
-        adx = last.get('ADX', 0.0)
-        atr = last.get('ATR', 0.0)
-        ma = last.get('MA', close)
-        ema = last.get('EMA', close)
-
-        logger.info(f"  📐 Угол MA: {ma_angle:+.1f}° | ADX: {adx:.1f} | ATR: ${atr:.2f}")
-        logger.info(f"  📊 MA: ${ma:.2f} | EMA: ${ema:.2f}")
+    logger.info(f"{'─' * 40}")
+    trade = "ДА" if final.get("trigger_trade") else "НЕТ"
+    logger.info(f"Торговать: {trade}")
+    logger.info(f"ATR: ${float(final.get('atr', 0) or 0):.2f}")
+    logger.info(f"ADX: {float(final.get('adx', 0) or 0):.1f}")

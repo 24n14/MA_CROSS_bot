@@ -208,3 +208,31 @@ class RiskConfig:
     min_atr_change_pct: float = 15.0       # Мин. изменение ATR в % для пересчёта
     MIN_AMOUNT: float = 0.001  # Минимальный объём для BTC/USDT на Bybit
     min_amount = MIN_AMOUNT
+
+
+MTF_CONFIG = {
+    "mtf_timeframes": ["5m", "15m", "30m"],  # лучше добавить "1h" если есть свечи
+    "tf_weights": {"5m": 0.22, "15m": 0.33, "30m": 0.45},
+    "min_agreement": 0.58,
+    "min_strength_for_trade": 42.0,
+    "min_signal_strength": 30.0,
+    "block_against_htf": True,
+    "htf_soft_factor": 0.35,
+    "signal_history": 8,
+    "max_bull_after_fade": 2,
+    "indicator": {
+        "ma_period": 20,
+        "ema_period": 10,
+        "atr_period": 14,
+        "adx_period": 14,
+        "angle_lookback": 5,
+        "adx_flat_threshold": 18.0,
+        "adx_trend_threshold": 22.0,
+        "angle_threshold_weak": 4.0,
+        "angle_threshold_strong": 9.0,
+        "divergence_threshold": 0.04,
+        "divergence_strong": 0.12,
+        "death_angle_drop_pct": 0.55,
+        "death_adx_max": 25.0,
+    },
+}
