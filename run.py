@@ -8,7 +8,7 @@ from config import AnalysisConfig
 from log import logger
 from mtf_analyzer import MultiTimeframeAnalyzer
 from mtf_analyzer import create_mtf_analyzer as _create_mtf_analyzer
-from mtf_analyzer import run_mtf_analysis as _run_mtf_analysis
+
 
 CSV_DIR = "csv_history"
 

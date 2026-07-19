@@ -3,7 +3,7 @@
 Использует собственный экземпляр Pybit HTTP клиента с логированием
 """
 import time
-import json
+
 from typing import Dict, Any, Optional
 from pybit.unified_trading import HTTP
 from log import logger
