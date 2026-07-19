@@ -208,4 +208,3 @@ class RiskConfig:
     min_atr_change_pct: float = 15.0       # Мин. изменение ATR в % для пересчёта
     MIN_AMOUNT: float = 0.001  # Минимальный объём для BTC/USDT на Bybit
     min_amount = MIN_AMOUNT
-    
