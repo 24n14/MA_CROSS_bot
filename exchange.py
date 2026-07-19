@@ -57,8 +57,7 @@ class ExchangeDataLoader:
         })
 
         if config.DEMO_TRADING:
-            # Демо-режим уже включён через enableDemoTrading в options,
-            # ccxt автоматически использует тестовые URL биржи
+            self.exchange.urls['api'] = self.exchange.urls['demotrading']
             result = self.exchange.privateGetV5UserQueryApi()
             uid = result['result']['userID']
             logger.info(f"🧪 ДЕМО-РЕЖИМ АКТИВИРОВАН UID {uid}")
@@ -70,6 +69,7 @@ class ExchangeDataLoader:
         balance = self.exchange.fetch_balance()
         usdt_balance = balance.get('USDT', {}).get('free', 0)
         logger.info(f"✅ АВТОРИЗАЦИЯ УСПЕШНА! 💰 Баланс: {usdt_balance} USDT")
+
 
     def fetch_ohlcv(self,
                     symbol: str,

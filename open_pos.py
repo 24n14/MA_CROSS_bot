@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 from pybit.unified_trading import HTTP
 from log import logger
 import config as cfg
-from api_logger import APILogger  # Используем исправленный логгер
+# from api_logger import APILogger  # Используем исправленный логгер
 
 
 # === Инициализация собственного экземпляра Pybit ===
@@ -37,13 +37,13 @@ def create_pybit_session() -> HTTP:
         logger.info("🚀 РЕАЛЬНАЯ ТОРГОВЛЯ (Pybit)")
 
     # Обертываем клиент для логирования
-    logger.info("🔍 Добавление логирования API запросов...")
-    api_logger = APILogger(log_full_response=True, log_params=True)
-    wrapped_client = api_logger.wrap_client(client)
-    logger.info("✅ Логирование API запросов включено")
+    #logger.info("🔍 Добавление логирования API запросов...")
+    #api_logger = APILogger(log_full_response=True, log_params=True)
+    #wrapped_client = api_logger.wrap_client(client)
+    #logger.info("✅ Логирование API запросов включено")
 
-    return wrapped_client
-
+    #return wrapped_client
+    return client
 
 # Создаем глобальный экземпляр для использования во всех функциях
 pybit_session = create_pybit_session()
@@ -148,6 +148,16 @@ def place_market_order(symbol: str, side: str, qty: float) -> Optional[Dict[str,
         Dict: Информация об ордере или None при ошибке
     """
     try:
+        # === ВАЖНО: Получаем информацию об инструменте для корректного qty ===
+        instrument = get_instrument_info(symbol)
+        if instrument:
+            # Лоты (обычно 1 для USDT контрактов)
+            lot_size_filter = instrument.get('lotSizeFilter', {})
+            qty_step = float(lot_size_filter.get('qtyStep', '0.001'))
+
+            # Округляем до шага лота
+            qty = round(qty / qty_step) * qty_step
+            qty = round(qty, 6)  # Bybit принимает до 6 знаков
         logger.info(f"📈 Размещение рыночного ордера: {side} {qty} {symbol}")
 
         response = pybit_session.place_order(
@@ -282,6 +292,20 @@ def execute_trade(exchange, symbol, side, amount, entry_price, stop_loss_price, 
         # === 3. Округляем цены и размер ===
         stop_loss_price = round(stop_loss_price, 2)
         take_profit_price = round(take_profit_price, 2)
+        instrument_info = get_instrument_info(bybit_symbol)
+        if instrument_info:
+            lot_size = instrument_info.get('lotSizeFilter', {})
+            qty_step = float(lot_size.get('qtyStep', '0.001'))
+            min_qty = float(lot_size.get('minOrderQty', '0.001'))
+            max_qty = float(lot_size.get('maxOrderQty', '1000000'))
+
+            # Округляем до шага
+            amount = round(amount / qty_step) * qty_step
+            amount = max(amount, min_qty)
+            amount = min(amount, max_qty)
+
+            logger.debug(f"Скорректированный размер: {amount} (шаг={qty_step}, мин={min_qty})")
+
         amount = round(amount, 6)
 
         logger.info(f"📊 Расчетные цены:")

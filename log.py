@@ -68,7 +68,7 @@ def _send_ntfy(message: str, priority: int) -> None:
                 url,
                 data=message.encode('utf-8'),
                 headers=headers,
-                timeout=10
+                timeout=30
             )
 
         if response.status_code != 200:
