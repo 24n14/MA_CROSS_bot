@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import warnings
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -276,7 +276,7 @@ class MultiTimeframeAnalyzer:
         return {
             "symbol": self.symbol,
             "exchange": self.exchange_name,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "higher_tf_bias": higher,
             "final_signal": final_sig,
             "final_direction": final_dir,
