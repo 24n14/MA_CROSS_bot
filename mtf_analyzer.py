@@ -13,6 +13,20 @@ from indicator import AdvancedTrendSignalIndicator
 
 warnings.filterwarnings("ignore")
 
+_TF_MINUTES = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "2h": 120,
+               "4h": 240, "6h": 360, "12h": 720, "1d": 1440, "1w": 10080}
+
+
+def tf_seniority(tf: str, weights: Dict[str, float]) -> tuple:
+    """Ключ старшинства ТФ: сначала вес, при равных весах — длительность свечи."""
+    return float(weights.get(tf, 0.0)), _TF_MINUTES.get(tf, 0)
+
+
+def senior_timeframe_row(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Запись старшего ТФ из результата aggregate()['timeframes']."""
+    return max(rows, key=lambda r: (float(r.get("weight", 0.0) or 0.0),
+                                    _TF_MINUTES.get(r.get("timeframe"), 0)))
+
 
 class MultiTimeframeAnalyzer:
     """
@@ -28,8 +42,13 @@ class MultiTimeframeAnalyzer:
         analysis_config: Optional[AnalysisConfig] = None,
     ) -> None:
         self.analysis_config = analysis_config or AnalysisConfig()
+        # В AnalysisConfig поле называется mtf_timeframes. Раньше читалось несуществующее
+        # поле "timeframes", и бот молча анализировал все 8 ТФ из TF_WEIGHTS (1m..1w).
         self.timeframes: List[str] = list(
-            timeframes or getattr(self.analysis_config, "timeframes", list(TF_WEIGHTS.keys()))
+            timeframes
+            or getattr(self.analysis_config, "mtf_timeframes", None)
+            or getattr(self.analysis_config, "timeframes", None)
+            or list(TF_WEIGHTS.keys())
         )
         # AnalysisConfig использует поле "exchange", а не "exchange_name"
         self.exchange_name = exchange_name or getattr(
@@ -163,7 +182,7 @@ class MultiTimeframeAnalyzer:
     def _sorted_by_weight(self) -> List[str]:
         return sorted(
             self.timeframes,
-            key=lambda t: float(self.tf_weights.get(t, 0.0)),
+            key=lambda t: tf_seniority(t, self.tf_weights),
             reverse=True,
         )
 

@@ -7,15 +7,20 @@ import traceback
 from log import logger
 from config import AnalysisConfig
 from run import create_mtf_analyzer, run_mtf_analysis
+from mtf_analyzer import senior_timeframe_row
 from DynamicRiskManager import DynamicRiskManager  # ✅ Восстановлен импорт
 from PositionMonitor import PositionMonitor
 from open_pos import emergency_close_position, pybit_session, execute_trade
 
 
 def _extract_tf_value(timeframes, key: str, default=0):
-    """Извлечение значения из старшего (первого) ТФ."""
-    if timeframes and len(timeframes) > 0:
-        return timeframes[0].get(key, default)
+    """Извлечение значения из старшего ТФ (с наибольшим весом).
+
+    Раньше бралась первая запись списка — это младший ТФ (5m, а при баге с выбором ТФ — 1m),
+    и SL/TP считались от ATR младшего графика.
+    """
+    if timeframes:
+        return senior_timeframe_row(timeframes).get(key, default)
     return default
 
 

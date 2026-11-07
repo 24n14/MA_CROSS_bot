@@ -210,6 +210,8 @@ class RiskConfig:
     min_amount = MIN_AMOUNT
 
 
+# ВНИМАНИЕ: MTF_CONFIG сейчас НЕ читается кодом. Реальные веса ТФ берутся из TF_WEIGHTS
+# выше, пороги — из AnalysisConfig. Изменение значений здесь на работу бота не влияет.
 MTF_CONFIG = {
     "mtf_timeframes": ["5m", "15m", "30m"],  # лучше добавить "1h" если есть свечи
     "tf_weights": {"5m": 0.22, "15m": 0.33, "30m": 0.45},
